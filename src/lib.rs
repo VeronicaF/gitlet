@@ -1,4 +1,8 @@
 #![feature(exact_size_is_empty)]
+#![feature(slice_split_once)]
 
+pub mod object;
 pub mod repository;
-mod utils;
+pub mod utils;
+
+pub use utils::repo_find;

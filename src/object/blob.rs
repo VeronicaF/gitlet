@@ -12,8 +12,7 @@ impl Blob<'_> {
 
 impl Display for Blob<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // todo do not use unwrap
-        let data = std::str::from_utf8(self.data).unwrap();
+        let data = String::from_utf8_lossy(self.data);
         write!(f, "{}", data)
     }
 }

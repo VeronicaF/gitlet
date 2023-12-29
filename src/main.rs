@@ -138,6 +138,7 @@ fn log_graphviz(
 
     if let Some(parents) = commit.parents() {
         for parent in parents {
+            let parent = String::from_utf8_lossy(&parent).to_string();
             print!("  c_{} -> c_{}", sha, parent);
             log_graphviz(repo, parent, visited)?;
         }

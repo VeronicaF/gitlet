@@ -1,16 +1,19 @@
 pub mod blob;
 pub mod commit;
+mod kvlm;
 
 use crate::repository::Repository;
 use crate::utils::sha;
 use anyhow::Context;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use clap::ValueEnum;
+use indexmap::IndexMap;
 use std::io::{Read, Write};
 
 #[derive(Debug)]
 pub struct GitObject {
     pub header: Header,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 #[derive(Debug)]
@@ -44,7 +47,10 @@ impl GitObject {
 
         let header = Header { fmt, length };
 
-        GitObject { header, data }
+        GitObject {
+            header,
+            data: data.into(),
+        }
     }
 
     pub fn read_object(repo: &Repository, sha: &str) -> anyhow::Result<GitObject> {
@@ -54,7 +60,6 @@ impl GitObject {
 
         let file = std::fs::File::open(&path)?;
 
-        // todo maybe use bytes instead of Vec<u8>
         let mut data = Vec::new();
         flate2::bufread::ZlibDecoder::new_with_decompress(
             std::io::BufReader::new(file),
@@ -62,6 +67,8 @@ impl GitObject {
         )
         .read_to_end(&mut data)
         .context("failed to read zlib data")?;
+
+        let mut data = Bytes::from(data);
 
         let (fmt, rest) = data
             .split_once(|&x| x == b' ')
@@ -87,12 +94,11 @@ impl GitObject {
 
         anyhow::ensure!(rest.len() == length, "object length mismatch");
 
+        data.advance(data.len() - rest.len());
+
         let header = Header { fmt, length };
 
-        Ok(GitObject {
-            header,
-            data: rest.to_vec(),
-        })
+        Ok(GitObject { header, data })
     }
 
     /// write object to disk
@@ -125,17 +131,18 @@ impl GitObject {
         Ok(sha)
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
-        let mut data = Vec::new();
+    pub fn serialize(&self) -> Bytes {
+        // todo still clones data here :(
+        // maybe change the GitObject
+        let mut data = BytesMut::new();
 
-        // todo: do not clone
         data.extend_from_slice(self.header.fmt.to_str().as_bytes());
-        data.push(b' ');
+        data.put_u8(b' ');
         data.extend_from_slice(self.header.length.to_string().as_bytes());
-        data.push(b'\0');
+        data.put_u8(b'\0');
         data.extend_from_slice(&self.data);
 
-        data
+        data.into()
     }
 
     pub fn display(&self) -> String {
@@ -145,7 +152,8 @@ impl GitObject {
                 format!("{}", blob)
             }
             Fmt::Commit => {
-                unimplemented!()
+                let blob = blob::Blob::new(&self.data);
+                format!("{}", blob)
             }
             Fmt::Tree => {
                 unimplemented!()

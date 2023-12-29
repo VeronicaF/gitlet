@@ -1,6 +1,8 @@
 use anyhow::ensure;
 use clap::{Parser, Subcommand};
 use gitlet::object::{Fmt, GitObject};
+use gitlet::repository::Repository;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -50,6 +52,13 @@ enum Commands {
         /// Read object from <file>
         path: PathBuf,
     },
+
+    /// Display history of a given commit.
+    Log {
+        /// Commit to start at
+        #[arg(default_value = "HEAD")]
+        commit: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -85,6 +94,54 @@ fn main() -> anyhow::Result<()> {
 
             println!("{}", sha);
         }
+        Commands::Log { commit } => {
+            let repo = gitlet::repo_find(".")?;
+            print!(r"digraph wyaglog{{");
+            print!("  node[shape=rect]");
+            log_graphviz(&repo, commit, &mut BTreeSet::new())?;
+            println!("}}");
+        }
     }
+    Ok(())
+}
+
+// todo do not clone
+fn log_graphviz(
+    repo: &Repository,
+    sha: String,
+    visited: &mut BTreeSet<String>,
+) -> anyhow::Result<()> {
+    if visited.contains(&sha) {
+        return Ok(());
+    }
+
+    visited.insert(sha.clone());
+
+    let commit = GitObject::read_object(repo, &sha)?;
+
+    anyhow::ensure!(commit.header.fmt == Fmt::Commit, "object type mismatch");
+
+    let commit = gitlet::object::commit::Commit::new(&commit.data);
+    let short_sha = &sha[..8];
+
+    let mut message = commit
+        .message()
+        .unwrap_or_default()
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"");
+
+    if let Some(i) = message.find('\n') {
+        message = message[..i].to_owned();
+    }
+
+    print!("  c_{} [label=\"{}: {}\"]", sha, short_sha, message);
+
+    if let Some(parents) = commit.parents() {
+        for parent in parents {
+            print!("  c_{} -> c_{}", sha, parent);
+            log_graphviz(repo, parent, visited)?;
+        }
+    }
+
     Ok(())
 }

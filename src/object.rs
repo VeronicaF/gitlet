@@ -1,13 +1,13 @@
 pub mod blob;
 pub mod commit;
 mod kvlm;
+pub mod tree;
 
 use crate::repository::Repository;
 use crate::utils::sha;
 use anyhow::Context;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use clap::ValueEnum;
-use indexmap::IndexMap;
 use std::io::{Read, Write};
 
 #[derive(Debug)]
@@ -152,8 +152,8 @@ impl GitObject {
                 format!("{}", blob)
             }
             Fmt::Commit => {
-                let blob = blob::Blob::new(&self.data);
-                format!("{}", blob)
+                let commit = commit::Commit::new(&self.data);
+                format!("{}", commit)
             }
             Fmt::Tree => {
                 unimplemented!()

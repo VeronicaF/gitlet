@@ -1,6 +1,7 @@
 use crate::object::kvlm::Kvlm;
 use bytes::Bytes;
 
+// todo maybe put these fields in a struct, now it's just a bunch of bytes in dict
 /// A tree object, which we’ll discuss now, that is, the contents of a worktree, files and directories;
 /// Zero, one or more parents;
 ///

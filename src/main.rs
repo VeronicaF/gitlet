@@ -59,6 +59,13 @@ enum Commands {
         #[arg(default_value = "HEAD")]
         commit: String,
     },
+    LsTree {
+        /// Recurse into sub-trees
+        #[arg(short)]
+        recursive: bool,
+        /// A tree-ish object.
+        tree: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -101,6 +108,43 @@ fn main() -> anyhow::Result<()> {
             log_graphviz(&repo, commit, &mut BTreeSet::new())?;
             println!("}}");
         }
+        Commands::LsTree { recursive, tree } => {
+            let repo = gitlet::repo_find(".")?;
+
+            fn ls_tree(
+                repo: &Repository,
+                recursive: bool,
+                tree: String,
+                prefix: PathBuf,
+            ) -> anyhow::Result<()> {
+                let tree_object = GitObject::read_object(repo, &tree)?;
+
+                ensure!(tree_object.header.fmt == Fmt::Tree, "object type mismatch");
+
+                let tree = gitlet::object::tree::Tree::parse(tree_object.data)?;
+
+                for (mode, path, sha1) in tree.0 {
+                    let file_type = sha1.file_type.to_str();
+                    let sha1_str = sha1.sha1;
+                    let mode = mode.0;
+                    if recursive && sha1.file_type == gitlet::object::tree::FileType::Tree {
+                        ls_tree(repo, recursive, sha1_str, prefix.join(path))?;
+                    } else {
+                        println!(
+                            "{} {} {}\t{}",
+                            mode,
+                            file_type,
+                            sha1_str,
+                            prefix.join(&path).display()
+                        );
+                    }
+                }
+
+                Ok(())
+            }
+
+            ls_tree(&repo, recursive, tree, PathBuf::from(""))?;
+        }
     }
     Ok(())
 }
@@ -127,8 +171,8 @@ fn log_graphviz(
     let mut message = commit
         .message()
         .unwrap_or_default()
-        .replace("\\", "\\\\")
-        .replace("\"", "\\\"");
+        .replace('\\', "\\\\")
+        .replace('\"', "\\\"");
 
     if let Some(i) = message.find('\n') {
         message = message[..i].to_owned();

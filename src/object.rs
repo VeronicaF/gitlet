@@ -10,6 +10,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use clap::ValueEnum;
 use std::io::{Read, Write};
 
+/// read and write git objects, doing the serialization and deserialization with compression
 #[derive(Debug)]
 pub struct GitObject {
     pub header: Header,

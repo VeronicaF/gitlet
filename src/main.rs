@@ -59,12 +59,22 @@ enum Commands {
         #[arg(default_value = "HEAD")]
         commit: String,
     },
+    /// List the contents of a tree object
     LsTree {
         /// Recurse into sub-trees
         #[arg(short)]
         recursive: bool,
         /// A tree-ish object.
         tree: String,
+    },
+
+    /// Checkout a commit inside of a directory.
+    /// todo this just clones file by tree into the directory, does not update HEAD
+    Checkout {
+        /// The commit or tree to checkout.
+        commit: String,
+        /// The EMPTY directory to checkout on.
+        path: PathBuf,
     },
 }
 
@@ -73,7 +83,7 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init { path } => {
-            let repo = gitlet::repository::Repository::init(path)?;
+            let repo = Repository::init(path)?;
             println!("init at path: {}", repo.git_dir.display());
         }
         Commands::CatFile { fmt, object } => {
@@ -144,6 +154,65 @@ fn main() -> anyhow::Result<()> {
             }
 
             ls_tree(&repo, recursive, tree, PathBuf::from(""))?;
+        }
+        Commands::Checkout { commit, path } => {
+            let repo = gitlet::repo_find(".")?;
+
+            let commit = GitObject::read_object(&repo, &commit)?;
+            ensure!(
+                commit.header.fmt == Fmt::Commit,
+                "object type mismatch, expected commit"
+            );
+
+            let commit = gitlet::object::commit::Commit::new(&commit.data);
+
+            let tree = commit.tree().ok_or(anyhow::anyhow!("commit has no tree"))?;
+            let tree = String::from_utf8_lossy(&tree).to_string();
+
+            if path.exists() {
+                ensure!(path.is_dir(), "path is not a directory: {}", path.display());
+                ensure!(
+                    path.read_dir()?.next().is_none(),
+                    "path is not empty: {}",
+                    path.display()
+                );
+            } else {
+                std::fs::create_dir_all(&path)?;
+            }
+
+            fn checkout(repo: &Repository, tree: String, prefix: PathBuf) -> anyhow::Result<()> {
+                let tree_object = GitObject::read_object(repo, &tree)?;
+                ensure!(
+                    tree_object.header.fmt == Fmt::Tree,
+                    "object type mismatch, expected tree"
+                );
+                let tree = gitlet::object::tree::Tree::parse(tree_object.data)?;
+
+                for (.., path, sha1) in tree.0 {
+                    let object = GitObject::read_object(repo, &sha1.sha1)?;
+                    let dest = prefix.join(&path);
+
+                    match sha1.file_type {
+                        gitlet::object::tree::FileType::Tree => {
+                            std::fs::create_dir_all(&dest)?;
+                            checkout(repo, sha1.sha1, dest)?;
+                        }
+                        gitlet::object::tree::FileType::Blob => {
+                            std::fs::write(&dest, object.data)?;
+                        }
+                        gitlet::object::tree::FileType::SymLink => {
+                            unimplemented!()
+                        }
+                        gitlet::object::tree::FileType::Commit => {
+                            unimplemented!()
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+
+            checkout(&repo, tree, path)?;
         }
     }
     Ok(())

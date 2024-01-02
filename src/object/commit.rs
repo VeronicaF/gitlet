@@ -34,6 +34,10 @@ impl Commit {
 
         Some(String::from_utf8_lossy(&bytes).to_string())
     }
+    
+    pub fn tree(&self) -> Option<Bytes> {
+        self.kvlm.dict.get("tree".as_bytes()).map(|v| v[0].clone())
+    }
 
     pub fn parents(&self) -> Option<Vec<Bytes>> {
         self.kvlm.dict.get("parent".as_bytes()).cloned()

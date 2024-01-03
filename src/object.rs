@@ -1,6 +1,7 @@
 pub mod blob;
 pub mod commit;
 mod kvlm;
+pub mod reference;
 pub mod tree;
 
 use crate::repository::Repository;

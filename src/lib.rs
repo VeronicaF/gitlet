@@ -4,5 +4,3 @@
 pub mod object;
 pub mod repository;
 pub mod utils;
-
-pub use utils::repo_find;

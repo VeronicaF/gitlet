@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 
 fn main() {
@@ -28,7 +29,8 @@ fn main() {
                 .to_owned()
                 + path.file_name().unwrap().to_str().unwrap();
 
-            println!("{:?}", sha);
+            print!("{:?}:\t", sha);
+            std::io::stdout().flush().unwrap();
             let handler = std::process::Command::new("git")
                 .arg("cat-file")
                 .arg("-t")

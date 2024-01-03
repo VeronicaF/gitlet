@@ -1,4 +1,5 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
+use indexmap::IndexMap;
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
@@ -124,5 +125,65 @@ impl Repository {
             git_dir,
             config,
         })
+    }
+
+    pub fn find(work_dir: impl Into<PathBuf>) -> anyhow::Result<Repository> {
+        let mut path = work_dir.into().canonicalize()?;
+
+        while !path.join(".gitlet").exists() {
+            if !path.pop() {
+                bail!("No gitlet repository found");
+            }
+        }
+
+        Repository::load(path)
+    }
+
+    pub fn refs(&self) -> anyhow::Result<IndexMap<String, String>> {
+        let path = self.git_dir.join("refs");
+        let prefix = PathBuf::from(&self.git_dir);
+
+        fn run(
+            path: PathBuf,
+            prefix: &PathBuf,
+            dict: &mut IndexMap<String, String>,
+        ) -> anyhow::Result<()> {
+            let dir = path
+                .read_dir()
+                .context(format!("failed to read dir: {}", path.display()))?;
+
+            for entry in dir {
+                let entry = entry.context(format!("failed to read entry: {}", path.display()))?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    run(path, prefix, dict)?;
+                } else {
+                    let sha = fs::read_to_string(&path)
+                        .context(format!("failed to read ref file: {}", path.display()))?;
+
+                    let sha = crate::object::reference::Ref::resolve(&sha)?
+                        .to_str()
+                        .context(format!("failed to convert ref to str: {}", path.display()))?
+                        .to_string();
+
+                    let path = path
+                        .strip_prefix(prefix)
+                        .unwrap() // this is safe because we know prefix is a parent of path
+                        .display()
+                        .to_string();
+
+                    dict.insert(path, sha);
+                }
+            }
+
+            Ok(())
+        }
+
+        let mut dict = IndexMap::new();
+
+        run(path, &prefix, &mut dict)?;
+
+        Ok(dict)
     }
 }

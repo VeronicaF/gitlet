@@ -76,6 +76,7 @@ enum Commands {
         /// The EMPTY directory to checkout on.
         path: PathBuf,
     },
+    ShowRef,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -87,7 +88,7 @@ fn main() -> anyhow::Result<()> {
             println!("init at path: {}", repo.git_dir.display());
         }
         Commands::CatFile { fmt, object } => {
-            let repo = gitlet::repo_find(".")?;
+            let repo = Repository::find(".")?;
 
             let object = GitObject::read_object(&repo, &object)?;
 
@@ -96,7 +97,7 @@ fn main() -> anyhow::Result<()> {
             println!("{}", object.display());
         }
         Commands::HashObject { write, fmt, path } => {
-            let repo = gitlet::repo_find(".")?;
+            let repo = Repository::find(".")?;
             anyhow::ensure!(path.exists(), "file does not exist: {}", path.display());
 
             let data = std::fs::read(&path)?;
@@ -112,14 +113,14 @@ fn main() -> anyhow::Result<()> {
             println!("{}", sha);
         }
         Commands::Log { commit } => {
-            let repo = gitlet::repo_find(".")?;
+            let repo = Repository::find(".")?;
             print!(r"digraph wyaglog{{");
             print!("  node[shape=rect]");
             log_graphviz(&repo, commit, &mut BTreeSet::new())?;
             println!("}}");
         }
         Commands::LsTree { recursive, tree } => {
-            let repo = gitlet::repo_find(".")?;
+            let repo = Repository::find(".")?;
 
             fn ls_tree(
                 repo: &Repository,
@@ -156,7 +157,7 @@ fn main() -> anyhow::Result<()> {
             ls_tree(&repo, recursive, tree, PathBuf::from(""))?;
         }
         Commands::Checkout { commit, path } => {
-            let repo = gitlet::repo_find(".")?;
+            let repo = Repository::find(".")?;
 
             let commit = GitObject::read_object(&repo, &commit)?;
             ensure!(
@@ -213,6 +214,15 @@ fn main() -> anyhow::Result<()> {
             }
 
             checkout(&repo, tree, path)?;
+        }
+        Commands::ShowRef => {
+            let repo = Repository::find(".")?;
+
+            let refs = repo.refs()?;
+
+            for (path, sha) in refs {
+                println!("{} {}", sha, path);
+            }
         }
     }
     Ok(())

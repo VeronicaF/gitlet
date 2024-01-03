@@ -186,4 +186,13 @@ impl Repository {
 
         Ok(dict)
     }
+
+    /// resolve a reference to an object
+    ///
+    /// reference can be a branch, tag, full sha, or short sha
+    ///
+    /// todo implement this
+    pub fn find_object(&self, reference: String) -> String {
+        reference
+    }
 }

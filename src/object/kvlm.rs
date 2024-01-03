@@ -1,9 +1,17 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use indexmap::IndexMap;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 pub struct Kvlm {
     pub dict: IndexMap<Bytes, Vec<Bytes>>,
+}
+
+impl Default for Kvlm {
+    fn default() -> Self {
+        Self {
+            dict: IndexMap::new(),
+        }
+    }
 }
 
 impl Kvlm {
@@ -78,7 +86,7 @@ impl Kvlm {
         Kvlm { dict }
     }
 
-    pub fn _serialize(&self) -> Bytes {
+    pub fn serialize(&self) -> Bytes {
         let mut data = BytesMut::new();
 
         for (key, values) in self.dict.iter().filter(|(k, _)| *k != "message") {
@@ -109,6 +117,12 @@ impl Deref for Kvlm {
 
     fn deref(&self) -> &Self::Target {
         &self.dict
+    }
+}
+
+impl DerefMut for Kvlm {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.dict
     }
 }
 
@@ -154,6 +168,6 @@ Hash-object and cat-file",
             &vec!["Hash-object and cat-file".as_bytes()]
         );
 
-        assert_eq!(kvlm._serialize(), raw);
+        assert_eq!(kvlm.serialize(), raw);
     }
 }

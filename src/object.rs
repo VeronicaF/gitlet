@@ -1,7 +1,8 @@
 pub mod blob;
 pub mod commit;
-mod kvlm;
+pub mod kvlm;
 pub mod reference;
+pub mod tag;
 pub mod tree;
 
 use crate::repository::Repository;
@@ -11,7 +12,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use clap::ValueEnum;
 use std::io::{Read, Write};
 
-/// read and write git objects, doing the serialization and deserialization with compression
+/// Read and write git objects, do the serialization and deserialization with compression
 #[derive(Debug)]
 pub struct GitObject {
     pub header: Header,
@@ -161,7 +162,9 @@ impl GitObject {
                 unimplemented!()
             }
             Fmt::Tag => {
-                unimplemented!()
+                // todo this is not right, fix this
+                let tag = commit::Commit::new(&self.data);
+                format!("{}", tag)
             }
         }
     }

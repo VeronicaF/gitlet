@@ -162,7 +162,7 @@ impl Repository {
                     let sha = fs::read_to_string(&path)
                         .context(format!("failed to read ref file: {}", path.display()))?;
 
-                    let sha = crate::object::reference::Ref::resolve(&sha)?
+                    let sha = crate::refs::resolve(&sha)?
                         .to_str()
                         .context(format!("failed to convert ref to str: {}", path.display()))?
                         .to_string();
@@ -187,7 +187,7 @@ impl Repository {
         Ok(dict)
     }
 
-    /// resolve a reference to an object
+    /// resolve a reference to an objects
     ///
     /// reference can be a branch, tag, full sha, or short sha
     ///

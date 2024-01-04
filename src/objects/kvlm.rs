@@ -2,8 +2,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 use indexmap::IndexMap;
 use std::ops::{Deref, DerefMut};
 
+/// This is used to parse and store a key-value list with message
+/// used in git objects commit and tag
 pub struct Kvlm {
-    pub dict: IndexMap<Bytes, Vec<Bytes>>,
+    pub dict: IndexMap<String, Vec<String>>,
 }
 
 impl Default for Kvlm {
@@ -16,7 +18,8 @@ impl Default for Kvlm {
 
 impl Kvlm {
     /// parse a key-value list with message
-    pub fn parse(raw: &Bytes) -> Kvlm {
+    pub fn parse(raw: Bytes) -> anyhow::Result<Self> {
+        #[derive(Debug, PartialEq)]
         enum KvlmState {
             Init,
             Key,
@@ -28,7 +31,7 @@ impl Kvlm {
         let mut key = BytesMut::new();
         let mut value = BytesMut::new();
         let mut message = BytesMut::new();
-        let mut dict = IndexMap::<Bytes, Vec<Bytes>>::new();
+        let mut dict = IndexMap::<String, Vec<String>>::new();
 
         let mut index = 0usize;
         let len = raw.len();
@@ -60,7 +63,9 @@ impl Kvlm {
                             index += 1;
                         } else {
                             let key = key.split().freeze();
+                            let key = String::from_utf8_lossy(&key).to_string();
                             let value = value.split().freeze();
+                            let value = String::from_utf8_lossy(&value).to_string();
                             dict.entry(key)
                                 .and_modify(|v| v.push(value.clone()))
                                 .or_insert(vec![value]);
@@ -78,22 +83,25 @@ impl Kvlm {
         }
 
         let message = message.split().freeze();
+        let message = String::from_utf8_lossy(&message).to_string();
 
-        dict.entry(Bytes::from("message"))
+        dict.entry("message".to_string())
             .and_modify(|v| v.push(message.clone()))
             .or_insert(vec![message]);
 
-        Kvlm { dict }
+        anyhow::ensure!(state == KvlmState::Message, "invalid kvlm");
+
+        Ok(Kvlm { dict })
     }
 
     pub fn serialize(&self) -> Bytes {
         let mut data = BytesMut::new();
 
-        for (key, values) in self.dict.iter().filter(|(k, _)| *k != "message") {
+        for (key, values) in self.dict.iter().filter(|(k, _)| **k != "message") {
             for value in values {
-                data.extend_from_slice(key);
+                data.extend_from_slice(key.as_bytes());
                 data.put_u8(b' ');
-                for byte in value {
+                for byte in value.as_bytes() {
                     data.put_u8(*byte);
                     if *byte == b'\n' {
                         data.put_u8(b' ');
@@ -106,14 +114,31 @@ impl Kvlm {
         data.put_u8(b'\n');
 
         // unwrap is safe because we have inserted "message" into dict
-        data.extend_from_slice(&self.dict.get("message".as_bytes()).unwrap()[0]);
+        let message = self.dict.get("message").unwrap()[0].as_bytes();
+
+        data.extend_from_slice(message);
 
         data.into()
+    }
+
+    /// get a single value of a key
+    ///
+    /// returns None if the key does not exist or the key has multiple values
+    pub fn get_single(&self, key: &str) -> Option<&String> {
+        let values = self.dict.get(key)?;
+        if values.len() != 1 {
+            return None;
+        }
+        values.first()
+    }
+
+    pub fn get(&self, key: &str) -> Option<&Vec<String>> {
+        self.dict.get(key)
     }
 }
 
 impl Deref for Kvlm {
-    type Target = IndexMap<Bytes, Vec<Bytes>>;
+    type Target = IndexMap<String, Vec<String>>;
 
     fn deref(&self) -> &Self::Target {
         &self.dict
@@ -140,32 +165,32 @@ committer veronicaf <1204409815@qq.com> 1703757808 +0800
  123
  123
 
-Hash-object and cat-file",
+Hash-objects and cat-file",
         );
 
-        let kvlm = Kvlm::parse(&raw);
+        let kvlm = Kvlm::parse(raw.clone()).unwrap();
 
         assert_eq!(
-            kvlm.get("tree".as_bytes()).unwrap(),
-            &vec!["e02c1335b0dc9c63201c32e4325192291efe2ea4".as_bytes()]
+            kvlm.get("tree").unwrap(),
+            &vec!["e02c1335b0dc9c63201c32e4325192291efe2ea4"]
         );
         assert_eq!(
-            kvlm.get("parent".as_bytes()).unwrap(),
-            &vec!["409f2bf19becc055a2bfb188bcced9d001842b23".as_bytes()]
-        );
-
-        assert_eq!(
-            kvlm.get("author".as_bytes()).unwrap(),
-            &vec!["veronicaf <1204409815@qq.com> 1703757808 +0800".as_bytes()]
-        );
-        assert_eq!(
-            kvlm.get("committer".as_bytes()).unwrap(),
-            &vec!["veronicaf <1204409815@qq.com> 1703757808 +0800\n123\n123".as_bytes()]
+            kvlm.get("parent").unwrap(),
+            &vec!["409f2bf19becc055a2bfb188bcced9d001842b23"]
         );
 
         assert_eq!(
-            kvlm.get("message".as_bytes()).unwrap(),
-            &vec!["Hash-object and cat-file".as_bytes()]
+            kvlm.get("author").unwrap(),
+            &vec!["veronicaf <1204409815@qq.com> 1703757808 +0800"]
+        );
+        assert_eq!(
+            kvlm.get("committer").unwrap(),
+            &vec!["veronicaf <1204409815@qq.com> 1703757808 +0800\n123\n123"]
+        );
+
+        assert_eq!(
+            kvlm.get("message").unwrap(),
+            &vec!["Hash-objects and cat-file"]
         );
 
         assert_eq!(kvlm.serialize(), raw);

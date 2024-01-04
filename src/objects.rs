@@ -1,7 +1,6 @@
 pub mod blob;
 pub mod commit;
 pub mod kvlm;
-pub mod reference;
 pub mod tag;
 pub mod tree;
 
@@ -59,7 +58,7 @@ impl GitObject {
     pub fn read_object(repo: &Repository, sha: &str) -> anyhow::Result<GitObject> {
         let path = repo.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
 
-        anyhow::ensure!(path.exists(), "object not found: {}", sha);
+        anyhow::ensure!(path.exists(), "objects not found: {}", sha);
 
         let file = std::fs::File::open(&path)?;
 
@@ -75,27 +74,27 @@ impl GitObject {
 
         let (fmt, rest) = data
             .split_once(|&x| x == b' ')
-            .context("failed to split object fmt")?;
+            .context("failed to split objects fmt")?;
         let (length, rest) = rest
             .split_once(|&x| x == b'\0')
-            .context("failed to split object length")?;
+            .context("failed to split objects length")?;
 
-        let fmt = std::str::from_utf8(fmt).context("failed to parse object fmt")?;
+        let fmt = std::str::from_utf8(fmt).context("failed to parse objects fmt")?;
 
         let fmt = Fmt::from_str(fmt, true)
             .map_err(|e| anyhow::anyhow!(e))
             .context(format!(
-                "failed to parse object fmt {} for sha {}",
+                "failed to parse objects fmt {} for sha {}",
                 fmt, sha
             ))?;
 
-        let length = std::str::from_utf8(length).context("failed to parse object length")?;
+        let length = std::str::from_utf8(length).context("failed to parse objects length")?;
 
         let length = length
             .parse::<usize>()
-            .context("failed to parse object length")?;
+            .context("failed to parse objects length")?;
 
-        anyhow::ensure!(rest.len() == length, "object length mismatch");
+        anyhow::ensure!(rest.len() == length, "objects length mismatch");
 
         data.advance(data.len() - rest.len());
 
@@ -104,9 +103,9 @@ impl GitObject {
         Ok(GitObject { header, data })
     }
 
-    /// write object to disk
+    /// write objects to disk
     ///
-    /// returns sha of object
+    /// returns sha of objects
     pub fn write_object(&self, repo: &Repository) -> anyhow::Result<String> {
         let data = self.serialize();
 
@@ -114,7 +113,7 @@ impl GitObject {
 
         let path = repo.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
 
-        anyhow::ensure!(!path.exists(), "object already exists: {}", sha);
+        anyhow::ensure!(!path.exists(), "objects already exists: {}", sha);
 
         std::fs::create_dir_all(
             path.parent()
@@ -147,25 +146,17 @@ impl GitObject {
 
         data.into()
     }
+}
 
-    pub fn display(&self) -> String {
-        match self.header.fmt {
-            Fmt::Blob => {
-                let blob = blob::Blob::new(&self.data);
-                format!("{}", blob)
-            }
-            Fmt::Commit => {
-                let commit = commit::Commit::new(&self.data);
-                format!("{}", commit)
-            }
-            Fmt::Tree => {
-                unimplemented!()
-            }
-            Fmt::Tag => {
-                // todo this is not right, fix this
-                let tag = commit::Commit::new(&self.data);
-                format!("{}", tag)
-            }
-        }
+impl std::fmt::Display for GitObject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.data))
     }
+}
+
+pub trait GitObjectTrait {
+    fn from_bytes(data: Bytes) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+    fn serialize(&self) -> anyhow::Result<Bytes>;
 }

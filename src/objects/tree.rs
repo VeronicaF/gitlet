@@ -1,3 +1,4 @@
+use crate::objects::GitObjectTrait;
 use anyhow::Context;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::path::PathBuf;
@@ -7,7 +8,9 @@ use std::path::PathBuf;
 /// it associates blobs to paths.
 ///
 /// It’s an array of three-element tuples made of a file mode, a path (relative to the worktree) and a SHA-1.
-pub struct Tree(pub Vec<(FileMode, PathBuf, Sha1)>);
+pub struct Tree(pub Vec<TreeEntry>);
+
+type TreeEntry = (FileMode, PathBuf, Sha1);
 
 pub struct FileMode(pub String);
 
@@ -55,7 +58,9 @@ impl FileType {
     }
 }
 
-impl Tree {
+impl Tree {}
+
+impl GitObjectTrait for Tree {
     /// `[mode] space [path] 0x00 [sha-1]`
     /// `[mode]` is up to six bytes and is an octal representation of a file mode, stored in ASCII.
     /// The first two digits encode the file type (file, directory, symlink or submodule), the last four the permissions.
@@ -64,8 +69,8 @@ impl Tree {
     ///
     /// Followed by the null-terminated (0x00) path;
     ///
-    /// Followed by the object’s SHA-1 in binary encoding, on 20 bytes.
-    pub fn parse(bytes: Bytes) -> anyhow::Result<Self> {
+    /// Followed by the objects’s SHA-1 in binary encoding, on 20 bytes.
+    fn from_bytes(bytes: Bytes) -> anyhow::Result<Self> {
         #[derive(Debug, PartialEq)]
         enum State {
             Init,
@@ -128,9 +133,27 @@ impl Tree {
         Ok(Tree(arr))
     }
 
-    pub fn serialize(&mut self) -> anyhow::Result<Bytes> {
+    fn serialize(&self) -> anyhow::Result<Bytes> {
         let mut bytes = BytesMut::new();
-        self.0.sort_by(|a, b| a.1.cmp(&b.1));
+
+        let mut data: Vec<&TreeEntry> = self.0.iter().collect();
+
+        data.sort_by(|a, b| {
+            // let a = &a.1;
+            // let b = &b.1;
+            let mut path_a = a.1.clone();
+            let mut path_b = b.1.clone();
+
+            if let FileType::Tree = a.2.file_type {
+                path_a.push("/");
+            }
+
+            if let FileType::Tree = b.2.file_type {
+                path_b.push("/");
+            }
+
+            path_a.cmp(&path_b)
+        });
 
         for (mode, path, sha1) in &self.0 {
             bytes.put_slice(mode.0.as_bytes());
@@ -158,7 +181,7 @@ mod test {
                 .as_slice(),
         );
         let raw = raw.freeze();
-        let mut tree = Tree::parse(raw.clone()).unwrap();
+        let mut tree = Tree::from_bytes(raw.clone()).unwrap();
 
         assert_eq!(tree.0.len(), 1);
         assert_eq!(tree.0[0].0 .0, "100644");

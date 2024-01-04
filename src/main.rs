@@ -1,7 +1,6 @@
 use anyhow::ensure;
-use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use gitlet::object::{Fmt, GitObject};
+use gitlet::objects::{Fmt, GitObject, GitObjectTrait};
 use gitlet::repository::Repository;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -33,13 +32,13 @@ enum Commands {
         )]
         fmt: Fmt,
         /// file to cat
-        #[arg(help = "The object to display.")]
+        #[arg(help = "The objects to display.")]
         object: String,
     },
 
-    /// Compute object ID and optionally creates a blob from a file
+    /// Compute objects ID and optionally creates a blob from a file
     HashObject {
-        /// Actually write the object into the database
+        /// Actually write the objects into the database
         #[arg(short)]
         write: bool,
         #[arg(
@@ -50,7 +49,7 @@ enum Commands {
             default_value = "blob"
         )]
         fmt: Fmt,
-        /// Read object from <file>
+        /// Read objects from <file>
         path: PathBuf,
     },
 
@@ -60,12 +59,12 @@ enum Commands {
         #[arg(default_value = "HEAD")]
         commit: String,
     },
-    /// List the contents of a tree object
+    /// List the contents of a tree objects
     LsTree {
         /// Recurse into sub-trees
         #[arg(short)]
         recursive: bool,
-        /// A tree-ish object.
+        /// A tree-ish objects.
         tree: String,
     },
 
@@ -81,12 +80,12 @@ enum Commands {
     ShowRef,
     /// tag
     Tag {
-        /// Whether to create a tag object
+        /// Whether to create a tag objects
         #[arg(short = 'a', requires = "name")]
         create_tag_object: bool,
         /// The new tag's name.
         name: Option<String>,
-        /// The object the new tag will point to
+        /// The objects the new tag will point to
         #[arg(default_value = "HEAD")]
         object: String,
     },
@@ -105,9 +104,9 @@ fn main() -> anyhow::Result<()> {
 
             let object = GitObject::read_object(&repo, &object)?;
 
-            ensure!(object.header.fmt == fmt, "object type mismatch");
+            ensure!(object.header.fmt == fmt, "objects type mismatch");
 
-            println!("{}", object.display());
+            println!("{}", object);
         }
         Commands::HashObject { write, fmt, path } => {
             let repo = Repository::find(".")?;
@@ -129,7 +128,7 @@ fn main() -> anyhow::Result<()> {
             let repo = Repository::find(".")?;
             print!(r"digraph wyaglog{{");
             print!("  node[shape=rect]");
-            log_graphviz(&repo, commit, &mut BTreeSet::new())?;
+            log_graphviz(&repo, &commit, &mut BTreeSet::new())?;
             println!("}}");
         }
         Commands::LsTree { recursive, tree } => {
@@ -143,15 +142,15 @@ fn main() -> anyhow::Result<()> {
             ) -> anyhow::Result<()> {
                 let tree_object = GitObject::read_object(repo, &tree)?;
 
-                ensure!(tree_object.header.fmt == Fmt::Tree, "object type mismatch");
+                ensure!(tree_object.header.fmt == Fmt::Tree, "objects type mismatch");
 
-                let tree = gitlet::object::tree::Tree::parse(tree_object.data)?;
+                let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
                 for (mode, path, sha1) in tree.0 {
                     let file_type = sha1.file_type.to_str();
                     let sha1_str = sha1.sha1;
                     let mode = mode.0;
-                    if recursive && sha1.file_type == gitlet::object::tree::FileType::Tree {
+                    if recursive && sha1.file_type == gitlet::objects::tree::FileType::Tree {
                         ls_tree(repo, recursive, sha1_str, prefix.join(path))?;
                     } else {
                         println!(
@@ -175,14 +174,12 @@ fn main() -> anyhow::Result<()> {
             let commit = GitObject::read_object(&repo, &commit)?;
             ensure!(
                 commit.header.fmt == Fmt::Commit,
-                "object type mismatch, expected commit"
+                "objects type mismatch, expected commit"
             );
 
-            let commit = gitlet::object::commit::Commit::new(&commit.data);
+            let commit = gitlet::objects::commit::Commit::from_bytes(commit.data)?;
 
             let tree = commit.tree().ok_or(anyhow::anyhow!("commit has no tree"))?;
-            let tree = String::from_utf8_lossy(&tree).to_string();
-
             if path.exists() {
                 ensure!(path.is_dir(), "path is not a directory: {}", path.display());
                 ensure!(
@@ -194,30 +191,30 @@ fn main() -> anyhow::Result<()> {
                 std::fs::create_dir_all(&path)?;
             }
 
-            fn checkout(repo: &Repository, tree: String, prefix: PathBuf) -> anyhow::Result<()> {
+            fn checkout(repo: &Repository, tree: &String, prefix: PathBuf) -> anyhow::Result<()> {
                 let tree_object = GitObject::read_object(repo, &tree)?;
                 ensure!(
                     tree_object.header.fmt == Fmt::Tree,
-                    "object type mismatch, expected tree"
+                    "objects type mismatch, expected tree"
                 );
-                let tree = gitlet::object::tree::Tree::parse(tree_object.data)?;
+                let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
                 for (.., path, sha1) in tree.0 {
                     let object = GitObject::read_object(repo, &sha1.sha1)?;
                     let dest = prefix.join(&path);
 
                     match sha1.file_type {
-                        gitlet::object::tree::FileType::Tree => {
+                        gitlet::objects::tree::FileType::Tree => {
                             std::fs::create_dir_all(&dest)?;
-                            checkout(repo, sha1.sha1, dest)?;
+                            checkout(repo, &sha1.sha1, dest)?;
                         }
-                        gitlet::object::tree::FileType::Blob => {
+                        gitlet::objects::tree::FileType::Blob => {
                             std::fs::write(&dest, object.data)?;
                         }
-                        gitlet::object::tree::FileType::SymLink => {
+                        gitlet::objects::tree::FileType::SymLink => {
                             unimplemented!()
                         }
-                        gitlet::object::tree::FileType::Commit => {
+                        gitlet::objects::tree::FileType::Commit => {
                             unimplemented!()
                         }
                     }
@@ -243,42 +240,33 @@ fn main() -> anyhow::Result<()> {
             object,
         } => {
             let repo = Repository::find(".")?;
-            let tags_path = repo.git_dir.join("refs").join("tags");
 
             if let Some(name) = name {
-                let sha = repo.find_object(object);
+                let mut sha = repo.find_object(object);
 
                 // create tag
                 if create_tag_object {
-                    // todo refactor the git object and specific stuff
-                    // todo this is stupid and ugly
-                    let mut kvlm = gitlet::object::kvlm::Kvlm::default();
-                    kvlm.insert(Bytes::from("object"), vec![Bytes::from(sha)]);
-                    kvlm.insert(Bytes::from("type"), vec![Bytes::from("commit")]);
-                    kvlm.insert(Bytes::from("tag"), vec![Bytes::from(name.clone())]);
-                    kvlm.insert(
-                        Bytes::from("tagger"),
-                        vec![Bytes::from("default@default.com")],
-                    );
-                    kvlm.insert(
-                        Bytes::from("message"),
-                        vec![Bytes::from(
-                            "A tag generated by gitlet, which won't let you customize the message!",
-                        )],
+                    let tag_object = gitlet::objects::tag::Tag::new(
+                        name.clone(),
+                        sha.clone(),
+                        "default@default.com".to_owned(),
+                        "A tag generated by gitlet, which won't let you customize the message!"
+                            .to_owned(),
                     );
 
-                    let bytes = kvlm.serialize();
+                    let bytes = tag_object.serialize()?;
 
                     let git_object = GitObject::new(Fmt::Tag, bytes.into());
 
-                    let sha = git_object.write_object(&repo)?;
-
-                    std::fs::write(tags_path.join(name), sha)?;
-                } else {
-                    std::fs::write(tags_path.join(name), sha)?;
+                    sha = git_object.write_object(&repo)?;
                 }
+
+                let tag_ref = gitlet::refs::tag::Tag::new(name, sha);
+
+                tag_ref.write_to(&repo)?;
             } else {
                 // list tags
+                let tags_path = repo.git_dir.join("refs").join("tags");
                 for entry in walkdir::WalkDir::new(tags_path) {
                     let entry = entry?;
                     let path = entry.path();
@@ -295,27 +283,27 @@ fn main() -> anyhow::Result<()> {
 }
 
 // todo do not clone
-fn log_graphviz(
+fn log_graphviz<'s>(
     repo: &Repository,
-    sha: String,
+    sha: &String,
     visited: &mut BTreeSet<String>,
 ) -> anyhow::Result<()> {
-    if visited.contains(&sha) {
+    if visited.contains(sha) {
         return Ok(());
     }
 
     visited.insert(sha.clone());
 
-    let commit = GitObject::read_object(repo, &sha)?;
+    let commit = GitObject::read_object(repo, sha)?;
 
-    anyhow::ensure!(commit.header.fmt == Fmt::Commit, "object type mismatch");
+    anyhow::ensure!(commit.header.fmt == Fmt::Commit, "objects type mismatch");
 
-    let commit = gitlet::object::commit::Commit::new(&commit.data);
+    let commit = gitlet::objects::commit::Commit::from_bytes(commit.data)?;
     let short_sha = &sha[..8];
 
     let mut message = commit
         .message()
-        .unwrap_or_default()
+        .unwrap_or(&"".to_owned())
         .replace('\\', "\\\\")
         .replace('\"', "\\\"");
 
@@ -327,7 +315,6 @@ fn log_graphviz(
 
     if let Some(parents) = commit.parents() {
         for parent in parents {
-            let parent = String::from_utf8_lossy(&parent).to_string();
             print!("  c_{} -> c_{}", sha, parent);
             log_graphviz(repo, parent, visited)?;
         }

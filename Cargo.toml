@@ -13,6 +13,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 flate2 = { version = "1.0.28", registry = "rsproxy" }
 hex = { version = "0.4.3", registry = "rsproxy" }
 indexmap = { version = "2.1.0", registry = "rsproxy" }
+regex = { version = "1.10.2", registry = "rsproxy" }
 rust-ini = "0.19"
 sha1 = { version = "0.10.6", registry = "rsproxy" }
 walkdir = { version = "2.4.0", registry = "rsproxy" }

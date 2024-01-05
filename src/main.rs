@@ -71,8 +71,8 @@ enum Commands {
     /// Checkout a commit inside of a directory.
     /// todo this just clones file by tree into the directory, does not update HEAD
     Checkout {
-        /// The commit or tree to checkout.
-        commit: String,
+        /// The commit or tree or ref to checkout.
+        name: String,
         /// The EMPTY directory to checkout on.
         path: PathBuf,
     },
@@ -101,6 +101,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::CatFile { fmt, object } => {
             let repo = Repository::find(".")?;
+            let object = repo
+                .find_object(&object, true)?
+                .ok_or(anyhow::anyhow!("object not found: {}", object))?;
 
             let object = GitObject::read_object(&repo, &object)?;
 
@@ -126,7 +129,52 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Log { commit } => {
             let repo = Repository::find(".")?;
-            print!(r"digraph wyaglog{{");
+            let commit = repo
+                .find_object(&commit, true)?
+                .ok_or(anyhow::anyhow!("object not found: {}", commit))?;
+
+            // todo do not clone
+            fn log_graphviz(
+                repo: &Repository,
+                sha: &str,
+                visited: &mut BTreeSet<String>,
+            ) -> anyhow::Result<()> {
+                if visited.contains(sha) {
+                    return Ok(());
+                }
+
+                visited.insert(sha.to_string());
+
+                let commit = GitObject::read_object(repo, sha)?;
+
+                anyhow::ensure!(commit.header.fmt == Fmt::Commit, "objects type mismatch");
+
+                let commit = gitlet::objects::commit::Commit::from_bytes(commit.data)?;
+                let short_sha = &sha[..8];
+
+                let mut message = commit
+                    .message()
+                    .unwrap_or(&"".to_owned())
+                    .replace('\\', "\\\\")
+                    .replace('\"', "\\\"");
+
+                if let Some(i) = message.find('\n') {
+                    message = message[..i].to_owned();
+                }
+
+                print!("  c_{} [label=\"{}: {}\"]", sha, short_sha, message);
+
+                if let Some(parents) = commit.parents() {
+                    for parent in parents {
+                        print!("  c_{} -> c_{}", sha, parent);
+                        log_graphviz(repo, parent, visited)?;
+                    }
+                }
+
+                Ok(())
+            }
+
+            print!(r"digraph log{{");
             print!("  node[shape=rect]");
             log_graphviz(&repo, &commit, &mut BTreeSet::new())?;
             println!("}}");
@@ -137,10 +185,24 @@ fn main() -> anyhow::Result<()> {
             fn ls_tree(
                 repo: &Repository,
                 recursive: bool,
-                tree: String,
+                name: &str,
                 prefix: PathBuf,
             ) -> anyhow::Result<()> {
-                let tree_object = GitObject::read_object(repo, &tree)?;
+                let name = repo
+                    .find_object(name, true)?
+                    .ok_or(anyhow::anyhow!("object not found: {}", name))?;
+
+                let object = GitObject::read_object(repo, &name)?;
+
+                // if name refers to a commit, we need to get the tree
+                if object.header.fmt == Fmt::Commit {
+                    let commit = gitlet::objects::commit::Commit::from_bytes(object.data)?;
+                    let tree = commit.tree().ok_or(anyhow::anyhow!("commit has no tree"))?;
+                    ls_tree(repo, recursive, tree, prefix)?;
+                    return Ok(());
+                }
+
+                let tree_object = object;
 
                 ensure!(tree_object.header.fmt == Fmt::Tree, "objects type mismatch");
 
@@ -151,7 +213,7 @@ fn main() -> anyhow::Result<()> {
                     let sha1_str = sha1.sha1;
                     let mode = mode.0;
                     if recursive && sha1.file_type == gitlet::objects::tree::FileType::Tree {
-                        ls_tree(repo, recursive, sha1_str, prefix.join(path))?;
+                        ls_tree(repo, recursive, &sha1_str, prefix.join(path))?;
                     } else {
                         println!(
                             "{} {} {}\t{}",
@@ -166,12 +228,17 @@ fn main() -> anyhow::Result<()> {
                 Ok(())
             }
 
-            ls_tree(&repo, recursive, tree, PathBuf::from(""))?;
+            ls_tree(&repo, recursive, &tree, PathBuf::from(""))?;
         }
-        Commands::Checkout { commit, path } => {
+        Commands::Checkout { name, path } => {
             let repo = Repository::find(".")?;
 
-            let commit = GitObject::read_object(&repo, &commit)?;
+            let name = repo
+                .find_object(&name, true)?
+                .ok_or(anyhow::anyhow!("object not found: {}", name))?;
+
+            let commit = GitObject::read_object(&repo, &name)?;
+
             ensure!(
                 commit.header.fmt == Fmt::Commit,
                 "objects type mismatch, expected commit"
@@ -191,8 +258,8 @@ fn main() -> anyhow::Result<()> {
                 std::fs::create_dir_all(&path)?;
             }
 
-            fn checkout(repo: &Repository, tree: &String, prefix: PathBuf) -> anyhow::Result<()> {
-                let tree_object = GitObject::read_object(repo, &tree)?;
+            fn checkout(repo: &Repository, tree: &str, prefix: PathBuf) -> anyhow::Result<()> {
+                let tree_object = GitObject::read_object(repo, tree)?;
                 ensure!(
                     tree_object.header.fmt == Fmt::Tree,
                     "objects type mismatch, expected tree"
@@ -241,8 +308,11 @@ fn main() -> anyhow::Result<()> {
         } => {
             let repo = Repository::find(".")?;
 
+            // create a tag
             if let Some(name) = name {
-                let mut sha = repo.find_object(object);
+                let mut sha = repo
+                    .find_object(&object, true)?
+                    .ok_or(anyhow::anyhow!("object not found: {}", object))?;
 
                 // create tag
                 if create_tag_object {
@@ -279,46 +349,5 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
-    Ok(())
-}
-
-// todo do not clone
-fn log_graphviz<'s>(
-    repo: &Repository,
-    sha: &String,
-    visited: &mut BTreeSet<String>,
-) -> anyhow::Result<()> {
-    if visited.contains(sha) {
-        return Ok(());
-    }
-
-    visited.insert(sha.clone());
-
-    let commit = GitObject::read_object(repo, sha)?;
-
-    anyhow::ensure!(commit.header.fmt == Fmt::Commit, "objects type mismatch");
-
-    let commit = gitlet::objects::commit::Commit::from_bytes(commit.data)?;
-    let short_sha = &sha[..8];
-
-    let mut message = commit
-        .message()
-        .unwrap_or(&"".to_owned())
-        .replace('\\', "\\\\")
-        .replace('\"', "\\\"");
-
-    if let Some(i) = message.find('\n') {
-        message = message[..i].to_owned();
-    }
-
-    print!("  c_{} [label=\"{}: {}\"]", sha, short_sha, message);
-
-    if let Some(parents) = commit.parents() {
-        for parent in parents {
-            print!("  c_{} -> c_{}", sha, parent);
-            log_graphviz(repo, parent, visited)?;
-        }
-    }
-
     Ok(())
 }

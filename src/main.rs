@@ -1,4 +1,4 @@
-use anyhow::ensure;
+use anyhow::{Context, ensure};
 use clap::{Parser, Subcommand};
 use gitlet::objects::{Fmt, GitObject, GitObjectTrait};
 use gitlet::repository::Repository;
@@ -88,6 +88,12 @@ enum Commands {
         /// The objects the new tag will point to
         #[arg(default_value = "HEAD")]
         object: String,
+    },
+    /// List all the stage files
+    LsFile {
+        /// Show everything
+        #[arg(long, short)]
+        verbose: bool,
     },
 }
 
@@ -347,6 +353,43 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+        }
+        Commands::LsFile { verbose } => {
+            let repo = Repository::find(".")?;
+
+            let index = repo.read_index()?;
+
+            if verbose {
+                println!(
+                    "Index file format v{}, containing {} entries.",
+                    index.version,
+                    index.entries.len()
+                )
+            }
+            
+            println!("{:#?}", index)
+
+            // for e in index.entries {
+            //     println!("{}", e.name);
+            //     if verbose {
+            //         println!("  {} with perms: {:o}", e.mode_type_str(), e.mode_perms);
+            //         println!("  on blob: {}", e.sha);
+            // 
+            //         let ctime = chrono::DateTime::<chrono::Utc>::from_timestamp(e.ctime.0 as i64, e.ctime.1).context("invalid ctime")?;
+            //         let mtime = chrono::DateTime::<chrono::Utc>::from_timestamp(e.mtime.0 as i64, e.mtime.1).context("invalid mtime")?;
+            //         println!("  created: {}, modified: {}", ctime, mtime);
+            //         println!("  device: {}, inode: {}", e.dev, e.ino);
+            //         let user = std::process::
+            //         println!("  user: {} ({})  group: {} ({})",
+            //             pwd.getpwuid(e.uid).pw_name,
+            //             e.uid,
+            //             grp.getgrgid(e.gid).gr_name,
+            //             e.gid))
+            //         print("  flags: stage={} assume_valid={}".format(
+            //             e.flag_stage,
+            //             e.flag_assume_valid))
+            //     }
+            // }
         }
     }
     Ok(())

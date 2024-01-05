@@ -8,3 +8,5 @@ pub mod objects;
 pub mod refs;
 pub mod repository;
 pub mod utils;
+
+pub mod index;

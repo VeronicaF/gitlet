@@ -9,6 +9,7 @@ publish = ["rsproxy"]
 [dependencies]
 anyhow = { version = "1.0.77", registry = "rsproxy" }
 bytes = { version = "1.5.0", registry = "rsproxy" }
+chrono = { version = "0.4.31", registry = "rsproxy" }
 clap = { version = "4.4.11", features = ["derive"] }
 flate2 = { version = "1.0.28", registry = "rsproxy" }
 hex = { version = "0.4.3", registry = "rsproxy" }

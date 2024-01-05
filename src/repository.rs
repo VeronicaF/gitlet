@@ -1,5 +1,7 @@
+use crate::index::GitIndex;
 use crate::objects::{GitObject, GitObjectTrait};
 use anyhow::Context;
+use bytes::Bytes;
 use indexmap::IndexMap;
 use std::fs;
 use std::io::Write;
@@ -303,5 +305,20 @@ impl Repository {
             // unwrap is safe because we have ensured that candidates is not empty
             Some(candidates.pop().unwrap())
         })
+    }
+
+    pub fn read_index(&self) -> anyhow::Result<GitIndex> {
+        let index_path = self.git_dir.join("index");
+
+        // New repositories have no index!
+        if !index_path.exists() {
+            return Ok(GitIndex::default());
+        }
+
+        let data = fs::read(&index_path).context("failed to read index file")?;
+
+        let data = Bytes::from(data);
+
+        GitIndex::from_bytes(data)
     }
 }

@@ -12,6 +12,7 @@ bytes = { version = "1.5.0", registry = "rsproxy" }
 chrono = { version = "0.4.31", registry = "rsproxy" }
 clap = { version = "4.4.11", features = ["derive"] }
 flate2 = { version = "1.0.28", registry = "rsproxy" }
+glob = { version = "0.3.1", registry = "rsproxy" }
 hex = { version = "0.4.3", registry = "rsproxy" }
 indexmap = { version = "2.1.0", registry = "rsproxy" }
 regex = { version = "1.10.2", registry = "rsproxy" }

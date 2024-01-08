@@ -95,6 +95,12 @@ enum Commands {
         #[arg(long, short)]
         verbose: bool,
     },
+    /// Check path(s) against ignore rules.
+    CheckIgnore {
+        /// Paths to check
+        #[arg(required = true)]
+        path: Vec<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -398,6 +404,20 @@ fn main() -> anyhow::Result<()> {
                         "  flags: stage={} assume_valid={}",
                         e.flag_stage, e.flag_assume_valid
                     )
+                }
+            }
+        }
+        Commands::CheckIgnore { path } => {
+            let repo = Repository::find(".")?;
+
+            let ignore = repo.read_ignore()?;
+
+            for p in path {
+                let result = ignore.check(&p)?;
+                if let Some(true) = result {
+                    println!("{}: ignored", p);
+                } else {
+                    println!("{}: not ignored", p);
                 }
             }
         }

@@ -10,3 +10,5 @@ pub mod repository;
 pub mod utils;
 
 pub mod index;
+
+pub mod ignore;

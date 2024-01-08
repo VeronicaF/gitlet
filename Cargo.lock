@@ -319,6 +319,7 @@ dependencies = [
  "chrono",
  "clap",
  "flate2",
+ "glob",
  "hex",
  "indexmap",
  "regex",
@@ -327,6 +328,12 @@ dependencies = [
  "users",
  "walkdir",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.1"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "hashbrown"

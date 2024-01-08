@@ -1,3 +1,4 @@
+use crate::ignore::GitIgnore;
 use crate::index::GitIndex;
 use crate::objects::{GitObject, GitObjectTrait};
 use anyhow::Context;
@@ -320,5 +321,60 @@ impl Repository {
         let data = Bytes::from(data);
 
         GitIndex::from_bytes(data)
+    }
+
+    pub fn read_ignore(&self) -> anyhow::Result<GitIgnore> {
+        let mut ignore = GitIgnore::default();
+
+        // Read local configuration in .git/info/exclude
+        let exclude_path = self.git_dir.join("info").join("exclude");
+
+        if exclude_path.exists() {
+            let data = fs::read_to_string(&exclude_path).context("failed to read exclude file")?;
+            let rules = GitIgnore::parse(&data);
+            ignore.global.push(rules);
+        }
+
+        // Global configuration
+        let config_home = std::env::var("XDG_CONFIG_HOME")
+            .context("failed to read env")
+            .ok()
+            .unwrap_or("~/.config".to_string());
+
+        let config_home = PathBuf::from(config_home);
+        let global_ignore_path = config_home.join("gitlet").join("ignore");
+
+        if global_ignore_path.exists() {
+            let data = fs::read_to_string(&global_ignore_path)
+                .context("failed to read global ignore file")?;
+            let rules = GitIgnore::parse(&data);
+            ignore.global.push(rules);
+        }
+
+        // .gitignore files in the index
+
+        let index = self.read_index()?;
+        for entry in index
+            .entries
+            .iter()
+            .filter(|e| e.name == ".gitignore" || e.name.ends_with("/.gitignore"))
+        {
+            let dirname = PathBuf::from(&entry.name)
+                .parent()
+                .context("invalid path")?
+                .to_str()
+                .context("invalid path")?
+                .to_owned();
+
+            let object = GitObject::read_object(self, &entry.sha)?;
+
+            let lines = String::from_utf8_lossy(&object.data).to_string();
+
+            let rules = GitIgnore::parse(&lines);
+
+            ignore.local.insert(dirname, rules);
+        }
+
+        Ok(ignore)
     }
 }

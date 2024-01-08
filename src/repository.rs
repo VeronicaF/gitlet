@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 /// a gitlet repository
 pub struct Repository {
-    pub working_dir: PathBuf,
+    pub work_tree: PathBuf,
     pub git_dir: PathBuf,
     pub config: RepoConfig,
 }
@@ -69,7 +69,7 @@ impl Repository {
             .context("failed to read config file")?;
 
         Ok(Self {
-            working_dir,
+            work_tree: working_dir,
             git_dir,
             config,
         })
@@ -77,21 +77,21 @@ impl Repository {
 
     /// Create a new repository at path.
     pub fn init(path: impl Into<PathBuf>) -> anyhow::Result<Self> {
-        let working_dir = path.into();
-        let git_dir = working_dir.join(".gitlet");
+        let work_tree = path.into();
+        let git_dir = work_tree.join(".gitlet");
 
         if git_dir.exists() {
             if !git_dir.is_dir() {
                 anyhow::bail!(
                     "not a gitlet repository (or any of the parent directories): {}",
-                    working_dir.display()
+                    work_tree.display()
                 );
             }
 
             if !git_dir.read_dir().iter().is_empty() {
                 anyhow::bail!(
                     "gitlet repository has existing files: {}",
-                    working_dir.display()
+                    work_tree.display()
                 );
             }
         } else {
@@ -125,7 +125,7 @@ impl Repository {
         config.write_to_file(git_dir.join("config"))?;
 
         Ok(Self {
-            working_dir,
+            work_tree,
             git_dir,
             config,
         })
@@ -376,5 +376,16 @@ impl Repository {
         }
 
         Ok(ignore)
+    }
+
+    pub fn active_branch(&self) -> anyhow::Result<String> {
+        let head =
+            fs::read_to_string(self.git_dir.join("HEAD")).context("failed to read HEAD file")?;
+        let head = head.trim();
+        if head.starts_with("ref: refs/heads/") {
+            Ok(head.trim_start_matches("ref: refs/heads/").to_string())
+        } else {
+            anyhow::bail!("Detached HEAD found: {}", head);
+        }
     }
 }

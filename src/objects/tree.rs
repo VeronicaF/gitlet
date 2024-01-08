@@ -14,10 +14,13 @@ type TreeEntry = (FileMode, PathBuf, Sha1);
 
 pub struct FileMode(pub String);
 
-pub struct Sha1 {
-    pub file_type: FileType,
-    pub sha1: String,
+impl FileMode {
+    pub fn file_type(&self) -> anyhow::Result<FileType> {
+        FileType::from_octal(&self.0[0..2])
+    }
 }
+
+pub struct Sha1(pub String);
 
 #[derive(PartialEq)]
 pub enum FileType {
@@ -114,15 +117,13 @@ impl GitObjectTrait for Tree {
                         let mode =
                             format!("{:0>6}", String::from_utf8_lossy(&mode.split()).to_string());
 
+                        anyhow::ensure!(FileType::from_octal(&mode[0..2]).is_ok(), "invalid mode");
+
                         let path =
                             PathBuf::from(String::from_utf8_lossy(&path.split()).to_string());
                         let sha1 = hex::encode(sha1.split());
 
-                        let file_type = FileType::from_octal(&mode[0..2])?;
-
-                        let sha1 = Sha1 { file_type, sha1 };
-
-                        arr.push((FileMode(mode), path, sha1));
+                        arr.push((FileMode(mode), path, Sha1(sha1)));
                     }
                 }
             }
@@ -144,11 +145,12 @@ impl GitObjectTrait for Tree {
             let mut path_a = a.1.clone();
             let mut path_b = b.1.clone();
 
-            if let FileType::Tree = a.2.file_type {
+            // unwrap is safe because we have checked the file type in from_bytes
+            if let FileType::Tree = a.0.file_type().expect("invalid file type") {
                 path_a.push("/");
             }
 
-            if let FileType::Tree = b.2.file_type {
+            if let FileType::Tree = b.0.file_type().expect("invalid file type") {
                 path_b.push("/");
             }
 
@@ -161,7 +163,7 @@ impl GitObjectTrait for Tree {
             bytes.put_slice(path.to_str().context("invalid path")?.as_bytes());
             bytes.put_u8(b'\0');
 
-            bytes.put_slice(hex::decode(&sha1.sha1).context("invalid sha1")?.as_slice());
+            bytes.put_slice(hex::decode(&sha1.0).context("invalid sha1")?.as_slice());
         }
 
         Ok(bytes.freeze())
@@ -181,15 +183,12 @@ mod test {
                 .as_slice(),
         );
         let raw = raw.freeze();
-        let mut tree = Tree::from_bytes(raw.clone()).unwrap();
+        let tree = Tree::from_bytes(raw.clone()).unwrap();
 
         assert_eq!(tree.0.len(), 1);
         assert_eq!(tree.0[0].0 .0, "100644");
         assert_eq!(tree.0[0].1.to_str().unwrap(), ".gitignore");
-        assert_eq!(
-            &tree.0[0].2.sha1,
-            "be0c80f03e9bfa51999c6c8746b9e358124d53ef"
-        );
+        assert_eq!(&tree.0[0].2 .0, "be0c80f03e9bfa51999c6c8746b9e358124d53ef");
 
         assert_eq!(tree.serialize().unwrap(), raw);
     }

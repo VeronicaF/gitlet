@@ -1,1 +1,0 @@
-digraph wyaglog{  node[shape=rect]  c_b293b4bdf32888079e1db5417bde406430a0f0d7 [label="b293b4bd: Hash-object and cat-file"]  c_b293b4bdf32888079e1db5417bde406430a0f0d7 -> c_409f2bf19becc055a2bfb188bcced9d001842b23  c_409f2bf19becc055a2bfb188bcced9d001842b23 [label="409f2bf1: Init gitlet repo."]}

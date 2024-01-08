@@ -2,7 +2,9 @@ use anyhow::{ensure, Context};
 use clap::{Parser, Subcommand};
 use gitlet::objects::{Fmt, GitObject, GitObjectTrait};
 use gitlet::repository::Repository;
+use indexmap::{IndexMap, IndexSet};
 use std::collections::BTreeSet;
+use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -101,6 +103,8 @@ enum Commands {
         #[arg(required = true)]
         path: Vec<String>,
     },
+    /// Show the working tree status.
+    Status,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -221,16 +225,16 @@ fn main() -> anyhow::Result<()> {
                 let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
                 for (mode, path, sha1) in tree.0 {
-                    let file_type = sha1.file_type.to_str();
-                    let sha1_str = sha1.sha1;
+                    let file_type = mode.file_type()?;
                     let mode = mode.0;
-                    if recursive && sha1.file_type == gitlet::objects::tree::FileType::Tree {
+                    let sha1_str = sha1.0;
+                    if recursive && file_type == gitlet::objects::tree::FileType::Tree {
                         ls_tree(repo, recursive, &sha1_str, prefix.join(path))?;
                     } else {
                         println!(
                             "{} {} {}\t{}",
                             mode,
-                            file_type,
+                            file_type.to_str(),
                             sha1_str,
                             prefix.join(&path).display()
                         );
@@ -278,14 +282,16 @@ fn main() -> anyhow::Result<()> {
                 );
                 let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
-                for (.., path, sha1) in tree.0 {
-                    let object = GitObject::read_object(repo, &sha1.sha1)?;
+                for (mode, path, sha1) in tree.0 {
+                    let object = GitObject::read_object(repo, &sha1.0)?;
                     let dest = prefix.join(&path);
 
-                    match sha1.file_type {
+                    let file_type = mode.file_type()?;
+
+                    match file_type {
                         gitlet::objects::tree::FileType::Tree => {
                             std::fs::create_dir_all(&dest)?;
-                            checkout(repo, &sha1.sha1, dest)?;
+                            checkout(repo, &sha1.0, dest)?;
                         }
                         gitlet::objects::tree::FileType::Blob => {
                             std::fs::write(&dest, object.data)?;
@@ -419,6 +425,155 @@ fn main() -> anyhow::Result<()> {
                 } else {
                     println!("{}: not ignored", p);
                 }
+            }
+        }
+        Commands::Status => {
+            let repo = Repository::find(".")?;
+            let index = repo.read_index()?;
+
+            // part 1: current branch
+            if let Ok(branch) = repo.active_branch() {
+                println!("On branch {}.", branch);
+            } else {
+                println!(
+                    "HEAD detached at {}",
+                    repo.find_object("HEAD", true)?.context("HEAD not found")?
+                );
+            }
+
+            // part 2: changes staged for commit
+            // index contains the staged files
+            // head contains last commit files
+            fn tree_to_dict(
+                repo: &Repository,
+                tree: &str,
+                prefix: &PathBuf,
+                dict: &mut IndexMap<String, String>,
+            ) -> anyhow::Result<()> {
+                let tree_or_commit = repo
+                    .find_object(tree, true)?
+                    .ok_or(anyhow::anyhow!("object not found: {}", tree))?;
+
+                let object = GitObject::read_object(repo, &tree_or_commit)?;
+
+                if let Fmt::Commit = object.header.fmt {
+                    let commit = gitlet::objects::commit::Commit::from_bytes(object.data.clone())?;
+                    let tree = commit.tree().ok_or(anyhow::anyhow!("commit has no tree"))?;
+                    return tree_to_dict(repo, tree, prefix, dict);
+                }
+
+                ensure!(
+                    object.header.fmt == Fmt::Tree,
+                    "objects type mismatch, expected tree"
+                );
+
+                let tree_object = object;
+
+                let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
+
+                for (mode, path, sha1) in tree.0 {
+                    let dest = path;
+                    let file_type = mode.file_type()?;
+
+                    match file_type {
+                        gitlet::objects::tree::FileType::Tree => {
+                            tree_to_dict(repo, &sha1.0, &prefix.join(dest), dict)?;
+                        }
+                        gitlet::objects::tree::FileType::Blob => {
+                            dict.insert(prefix.join(dest).display().to_string(), sha1.0);
+                        }
+                        gitlet::objects::tree::FileType::SymLink => {
+                            unimplemented!()
+                        }
+                        gitlet::objects::tree::FileType::Commit => {
+                            unimplemented!()
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+
+            let mut head = IndexMap::new();
+
+            // transform the tree into a dict<path, sha1>
+            tree_to_dict(&repo, "HEAD", &PathBuf::from(""), &mut head)?;
+
+            println!("Changes to be committed:");
+            // then compare with the index
+            for entry in &index.entries {
+                if let Some(sha) = head.get(&entry.name) {
+                    if sha != &entry.sha {
+                        println!("  modified: {}", entry.name);
+                    }
+                    head.remove(&entry.name);
+                } else {
+                    println!("  added:   {}", entry.name);
+                }
+            }
+
+            for (name, _) in head {
+                println!("  deleted: {}", name);
+            }
+
+            // part 3: changes not staged for commit
+            println!("Changes not staged for commit:");
+
+            let ignore = repo.read_ignore()?;
+
+            let mut all_files = IndexSet::new();
+
+            for entry in walkdir::WalkDir::new(&repo.work_tree) {
+                let entry = entry.context("failed to read entry")?;
+
+                let path = entry.path();
+
+                if (path.is_dir() || path.starts_with(&repo.git_dir))
+                    || (path.starts_with(repo.git_dir.with_file_name(".git")))
+                {
+                    continue;
+                }
+
+                all_files.insert(path.to_owned());
+            }
+
+            for entry in &index.entries {
+                let abs_path = repo.work_tree.join(&entry.name);
+
+                if !abs_path.exists() {
+                    println!("  deleted: {}", entry.name);
+                } else {
+                    let meta = abs_path.metadata()?;
+
+                    // Compare metadata
+                    let ctime_ns = entry.ctime.0 as i64 * 1_000_000_000 + entry.ctime.1 as i64;
+                    let mtime_ns = entry.mtime.0 as i64 * 1_000_000_000 + entry.mtime.1 as i64;
+
+                    // todo we should deal with symlink here
+                    // todo git modify ctime and mtime after status command
+                    if meta.ctime_nsec() != ctime_ns || meta.mtime_nsec() != mtime_ns {
+                        let data = std::fs::read(&abs_path)?;
+                        let object = GitObject::new(Fmt::Blob, data);
+
+                        let hash = gitlet::utils::sha(&object.serialize());
+                        if hash != entry.sha {
+                            println!("  modified: {}", entry.name);
+                        }
+                    }
+                }
+                all_files.remove(&repo.work_tree.join(&entry.name));
+            }
+
+            println!();
+
+            println!("Untracked files:");
+
+            for path in all_files {
+                let path = path.strip_prefix(&repo.work_tree)?;
+                if ignore.check(&path.to_string_lossy())?.unwrap_or(false) {
+                    continue;
+                }
+                println!("  {}", path.display());
             }
         }
     }

@@ -106,9 +106,10 @@ impl GitIndex {
             let sha = hex::encode(sha);
 
             // Flags we're going to ignore
-            let flags = bytes.split_to(2);
-            let flags = u16::from_be_bytes([flags[0], flags[1]]);
-            let flags = flags >> 12;
+            let flags_and_name_len = bytes.split_to(2);
+            let flags_and_name_len =
+                u16::from_be_bytes([flags_and_name_len[0], flags_and_name_len[1]]);
+            let flags = flags_and_name_len >> 12;
 
             let flag_assume_valid = (flags & 0b1000) != 0;
             let flag_extended = (flags & 0b0100) != 0;
@@ -122,7 +123,7 @@ impl GitIndex {
             // beyond that length, git treats 0xFFF as meaning at least
             //  0xFFF, and looks for the final 0x00 to find the end of the
             //  name --- at a small, and probably very rare, performance cost.
-            let name_len = flags & 0x0fff;
+            let name_len = flags_and_name_len & 0x0fff;
 
             let name = if name_len < 0x0fff {
                 anyhow::ensure!(

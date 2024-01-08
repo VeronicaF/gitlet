@@ -1,4 +1,4 @@
-use anyhow::{Context, ensure};
+use anyhow::{ensure, Context};
 use clap::{Parser, Subcommand};
 use gitlet::objects::{Fmt, GitObject, GitObjectTrait};
 use gitlet::repository::Repository;
@@ -90,7 +90,7 @@ enum Commands {
         object: String,
     },
     /// List all the stage files
-    LsFile {
+    LsFiles {
         /// Show everything
         #[arg(long, short)]
         verbose: bool,
@@ -354,7 +354,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        Commands::LsFile { verbose } => {
+        Commands::LsFiles { verbose } => {
             let repo = Repository::find(".")?;
 
             let index = repo.read_index()?;
@@ -366,30 +366,40 @@ fn main() -> anyhow::Result<()> {
                     index.entries.len()
                 )
             }
-            
-            println!("{:#?}", index)
 
-            // for e in index.entries {
-            //     println!("{}", e.name);
-            //     if verbose {
-            //         println!("  {} with perms: {:o}", e.mode_type_str(), e.mode_perms);
-            //         println!("  on blob: {}", e.sha);
-            // 
-            //         let ctime = chrono::DateTime::<chrono::Utc>::from_timestamp(e.ctime.0 as i64, e.ctime.1).context("invalid ctime")?;
-            //         let mtime = chrono::DateTime::<chrono::Utc>::from_timestamp(e.mtime.0 as i64, e.mtime.1).context("invalid mtime")?;
-            //         println!("  created: {}, modified: {}", ctime, mtime);
-            //         println!("  device: {}, inode: {}", e.dev, e.ino);
-            //         let user = std::process::
-            //         println!("  user: {} ({})  group: {} ({})",
-            //             pwd.getpwuid(e.uid).pw_name,
-            //             e.uid,
-            //             grp.getgrgid(e.gid).gr_name,
-            //             e.gid))
-            //         print("  flags: stage={} assume_valid={}".format(
-            //             e.flag_stage,
-            //             e.flag_assume_valid))
-            //     }
-            // }
+            for e in index.entries {
+                println!("{}", e.name);
+                if verbose {
+                    println!("  {} with perms: {:o}", e.mode_type_str(), e.mode_perms);
+                    println!("  on blob: {}", e.sha);
+
+                    let ctime = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                        e.ctime.0 as i64,
+                        e.ctime.1,
+                    )
+                    .context("invalid ctime")?;
+                    let mtime = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                        e.mtime.0 as i64,
+                        e.mtime.1,
+                    )
+                    .context("invalid mtime")?;
+                    println!("  created: {}, modified: {}", ctime, mtime);
+                    println!("  device: {}, inode: {}", e.dev, e.ino);
+                    let user = users::get_user_by_uid(e.uid).context("invalid uid")?;
+                    let group = users::get_group_by_gid(e.gid).context("invalid gid")?;
+                    println!(
+                        "  user: {} ({})  group: {} ({})",
+                        user.name().to_string_lossy(),
+                        e.uid,
+                        group.name().to_string_lossy(),
+                        e.gid
+                    );
+                    println!(
+                        "  flags: stage={} assume_valid={}",
+                        e.flag_stage, e.flag_assume_valid
+                    )
+                }
+            }
         }
     }
     Ok(())

@@ -105,6 +105,11 @@ enum Commands {
     },
     /// Show the working tree status.
     Status,
+    /// Remove files from the working tree and the index.
+    Rm {
+        /// Files to remove
+        path: Vec<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -575,6 +580,11 @@ fn main() -> anyhow::Result<()> {
                 }
                 println!("  {}", path.display());
             }
+        }
+        Commands::Rm { path } => {
+            let repo = Repository::find(".")?;
+
+            repo.rm(path, true, false)?;
         }
     }
     Ok(())

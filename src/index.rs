@@ -7,7 +7,9 @@
 //!
 //! When you git commit those changes, a new tree is produced from the index file, a new commit object is generated with that tree, branches are updated and we’re done.
 
+use anyhow::Context;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use std::cmp::min;
 
 /// # The git index file format
 /// It is a **binary** file with three parts:
@@ -22,6 +24,8 @@ pub struct GitIndex {
 }
 
 impl GitIndex {
+    pub fn rm(&mut self, path: &[&str]) {}
+
     pub fn from_bytes(mut bytes: Bytes) -> anyhow::Result<Self> {
         let mut header = bytes.split_to(12);
 
@@ -74,7 +78,7 @@ impl GitIndex {
 
             // unused placeholder
             let unused = bytes.split_to(2);
-            anyhow::ensure!(&unused[..] == [0, 0], "invalid index file format");
+            anyhow::ensure!(unused[..] == [0, 0], "invalid index file format");
 
             // Read object type and permissions
             let mode = bytes.split_to(2);
@@ -177,6 +181,53 @@ impl GitIndex {
         }
 
         Ok(GitIndex { version, entries })
+    }
+
+    pub fn serialize(&self) -> anyhow::Result<Bytes> {
+        let mut buf = BytesMut::new();
+
+        buf.put_slice(b"DIRC");
+
+        buf.put_u32(self.version);
+
+        buf.put_u32(self.entries.len() as u32);
+
+        for entry in &self.entries {
+            buf.put_u32(entry.ctime.0);
+            buf.put_u32(entry.ctime.1);
+            buf.put_u32(entry.mtime.0);
+            buf.put_u32(entry.mtime.1);
+            buf.put_u32(entry.dev);
+            buf.put_u32(entry.ino);
+            buf.put_slice(&[0; 2]); // unused placeholder
+            buf.put_u16(entry.mode_type << 12 | entry.mode_perms);
+            buf.put_u32(entry.uid);
+            buf.put_u32(entry.gid);
+            buf.put_u32(entry.fsize);
+
+            let sha = hex::decode(&entry.sha).context("invalid sha")?;
+            anyhow::ensure!(sha.len() == 20, "invalid sha");
+
+            buf.put_slice(&sha);
+
+            let mut flags = 0u16;
+            if entry.flag_assume_valid {
+                flags |= 1 << 15;
+            }
+            flags |= entry.flag_stage;
+
+            let name_len = min(entry.name.len(), 0xfff);
+            flags |= name_len as u16;
+            buf.put_u16(flags);
+
+            buf.put_slice(entry.name.as_bytes());
+            buf.put_u8(0);
+
+            let padding = (8 - ((62 + name_len + 1) % 8)) % 8;
+            buf.put_slice(&vec![0; padding]);
+        }
+
+        Ok(buf.freeze())
     }
 }
 

@@ -3,7 +3,7 @@ use crate::index::GitIndex;
 use crate::objects::{GitObject, GitObjectTrait};
 use anyhow::Context;
 use bytes::Bytes;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
@@ -323,6 +323,16 @@ impl Repository {
         GitIndex::from_bytes(data)
     }
 
+    pub fn write_index(&self, index: &GitIndex) -> anyhow::Result<()> {
+        let index_path = self.git_dir.join("index");
+
+        let data = index.serialize()?;
+
+        fs::write(index_path, data).context("failed to write index file")?;
+
+        Ok(())
+    }
+
     pub fn read_ignore(&self) -> anyhow::Result<GitIgnore> {
         let mut ignore = GitIgnore::default();
 
@@ -387,5 +397,54 @@ impl Repository {
         } else {
             anyhow::bail!("Detached HEAD found: {}", head);
         }
+    }
+
+    pub fn rm(
+        &self,
+        paths: Vec<String>,
+        delete_file: bool,
+        ignore_missing: bool,
+    ) -> anyhow::Result<()> {
+        let mut index = self.read_index()?;
+        let mut abs_paths = IndexSet::with_capacity(paths.len());
+
+        for path in paths {
+            let path = PathBuf::from(path).canonicalize().context("invalid path")?;
+            if path.starts_with(&self.work_tree) {
+                abs_paths.insert(path);
+            } else {
+                anyhow::bail!("path not in working directory: {}", path.display());
+            }
+        }
+
+        let (remove, kept): (Vec<_>, Vec<_>) = index.entries.into_iter().partition(|path| {
+            let abs_path = self.work_tree.join(&path.name);
+            if abs_paths.contains(&abs_path) {
+                abs_paths.remove(&abs_path);
+                true
+            } else {
+                false
+            }
+        });
+
+        if !ignore_missing && !abs_paths.is_empty() {
+            anyhow::bail!(
+                "path not in index: {}",
+                // unwrap is safe because we have ensured that abs_paths is not empty
+                abs_paths.iter().next().unwrap().display()
+            );
+        }
+
+        if delete_file {
+            for e in remove {
+                fs::remove_file(&e.name).context(format!("failed to remove file: {}", e.name))?;
+            }
+        }
+
+        index.entries = kept;
+
+        self.write_index(&index)?;
+
+        Ok(())
     }
 }

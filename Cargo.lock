@@ -29,7 +29,7 @@ version = "0.1.5"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
- "libc 0.2.151 (registry+https://rsproxy.cn/crates.io-index)",
+ "libc",
 ]
 
 [[package]]
@@ -67,7 +67,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e28923312444cdd728e4738b3f9c9cac739500909bb3d3c94b43551b16517648"
 dependencies = [
- "windows-sys",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -77,7 +77,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cd54b81ec8d6180e24654d0b371ad22fc3dd083b6ff8ba325b72e00c87660a7"
 dependencies = [
  "anstyle",
- "windows-sys",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -91,6 +91,18 @@ name = "autocfg"
 version = "1.1.0"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
+
+[[package]]
+name = "bitflags"
+version = "1.3.2"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
+
+[[package]]
+name = "bitflags"
+version = "2.4.1"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 
 [[package]]
 name = "block-buffer"
@@ -119,14 +131,8 @@ version = "1.0.83"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "f1174fb0b6ec23863f8b971027804a42614e347eafb0a95bf0b12cdae21fc4d0"
 dependencies = [
- "libc 0.2.151 (registry+https://rsproxy.cn/crates.io-index)",
+ "libc",
 ]
-
-[[package]]
-name = "cfg-if"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "cfg-if"
@@ -195,24 +201,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
-name = "const-random"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aaf16c9c2c612020bcfd042e170f6e32de9b9d75adb5277cdbbd2e2c8c8299a"
-dependencies = [
- "const-random-macro",
-]
-
-[[package]]
-name = "const-random-macro"
-version = "0.1.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
-dependencies = [
- "getrandom",
- "once_cell 1.19.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tiny-keccak",
-]
+name = "configparser"
+version = "3.0.4"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "4ec6d3da8e550377a85339063af6e3735f4b1d9392108da4e083a1b3b9820288"
 
 [[package]]
 name = "core-foundation-sys"
@@ -226,7 +218,7 @@ version = "0.2.11"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "ce420fe07aecd3e67c5f910618fe65e94158f6dcc0adf44e00d69ce2bdfe0fd0"
 dependencies = [
- "libc 0.2.151 (registry+https://rsproxy.cn/crates.io-index)",
+ "libc",
 ]
 
 [[package]]
@@ -235,14 +227,8 @@ version = "1.3.2"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "b540bd8bc810d3885c6ea91e2018302f68baba2129ab3e88f32389ee9370880d"
 dependencies = [
- "cfg-if 1.0.0 (registry+https://rsproxy.cn/crates.io-index)",
+ "cfg-if",
 ]
-
-[[package]]
-name = "crunchy"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "crypto-common"
@@ -265,12 +251,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "dlv-list"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "442039f5147480ba31067cb00ada1adae6892028e40e45fc5de7b7df6dcc1b5f"
+name = "dirs"
+version = "5.0.1"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
 dependencies = [
- "const-random",
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.4.1"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -301,12 +299,12 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe9006bed769170c11f845cf00c7c1e9092aeb3f268e007c3e760ac68008070f"
+version = "0.2.12"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "190092ea657667030ac6a35e305e62fc4dd69fd98ac98631e5d3a2b1575a12b5"
 dependencies = [
- "cfg-if 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "libc 0.2.151 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cfg-if",
+ "libc",
  "wasi",
 ]
 
@@ -318,12 +316,13 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "configparser",
+ "dirs",
  "flate2",
  "glob",
  "hex",
  "indexmap",
  "regex",
- "rust-ini",
  "sha1",
  "users",
  "walkdir",
@@ -334,12 +333,6 @@ name = "glob"
 version = "0.3.1"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
-
-[[package]]
-name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 
 [[package]]
 name = "hashbrown"
@@ -389,7 +382,7 @@ source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "d530e1a18b1cb4c484e6e34556a0d948706958449fca0cab753d649f2bce3d1f"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.3",
+ "hashbrown",
 ]
 
 [[package]]
@@ -404,14 +397,19 @@ dependencies = [
 [[package]]
 name = "libc"
 version = "0.2.151"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "302d7ab3130588088d277783b1e2d2e10c9e9e4a16dd9050e6ec93fb3e7048f4"
 
 [[package]]
-name = "libc"
-version = "0.2.151"
+name = "libredox"
+version = "0.0.1"
 source = "registry+https://rsproxy.cn/crates.io-index"
-checksum = "302d7ab3130588088d277783b1e2d2e10c9e9e4a16dd9050e6ec93fb3e7048f4"
+checksum = "85c833ca1e66078851dba29046874e38f08b2c883700aa29a03ddd3b23814ee8"
+dependencies = [
+ "bitflags 2.4.1",
+ "libc",
+ "redox_syscall",
+]
 
 [[package]]
 name = "log"
@@ -446,24 +444,14 @@ dependencies = [
 [[package]]
 name = "once_cell"
 version = "1.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
-
-[[package]]
-name = "once_cell"
-version = "1.19.0"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 
 [[package]]
-name = "ordered-multimap"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ed8acf08e98e744e5384c8bc63ceb0364e68a6854187221c18df61c4797690e"
-dependencies = [
- "dlv-list",
- "hashbrown 0.13.2",
-]
+name = "option-ext"
+version = "0.2.0"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "proc-macro2"
@@ -502,6 +490,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_syscall"
+version = "0.4.1"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "4722d768eff46b75989dd134e5c353f0d6296e5aaa3132e776cbdb56be7731aa"
+dependencies = [
+ "bitflags 1.3.2",
+]
+
+[[package]]
+name = "redox_users"
+version = "0.4.4"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "a18479200779601e498ada4e8c1e1f50e3ee19deb0259c25825a98b5603b2cb4"
+dependencies = [
+ "getrandom",
+ "libredox",
+ "thiserror",
+]
+
+[[package]]
 name = "regex"
 version = "1.10.2"
 source = "registry+https://rsproxy.cn/crates.io-index"
@@ -531,16 +539,6 @@ source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "c08c74e62047bb2de4ff487b251e4a92e24f48745648451635cec7d591162d9f"
 
 [[package]]
-name = "rust-ini"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e2a3bcec1f113553ef1c88aae6c020a369d03d55b58de9869a0908930385091"
-dependencies = [
- "cfg-if 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ordered-multimap",
-]
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://rsproxy.cn/crates.io-index"
@@ -555,7 +553,7 @@ version = "0.10.6"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
 dependencies = [
- "cfg-if 1.0.0 (registry+https://rsproxy.cn/crates.io-index)",
+ "cfg-if",
  "cpufeatures",
  "digest",
 ]
@@ -589,12 +587,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "tiny-keccak"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
+name = "thiserror"
+version = "1.0.56"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "d54378c645627613241d077a3a79db965db602882668f9136ac42af9ecb730ad"
 dependencies = [
- "crunchy",
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.56"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "fa0faa943b50f3db30a20aa7e265dbc66076993efed8463e8de414e5d06d3471"
+dependencies = [
+ "proc-macro2 1.0.75",
+ "quote 1.0.35",
+ "syn 2.0.48",
 ]
 
 [[package]]
@@ -621,7 +630,7 @@ version = "0.11.0"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "24cc0f6d6f267b73e5a2cadf007ba8f9bc39c6a6f9666f8cf25ea809a153b032"
 dependencies = [
- "libc 0.2.151 (registry+https://rsproxy.cn/crates.io-index)",
+ "libc",
  "log",
 ]
 
@@ -650,7 +659,7 @@ dependencies = [
 [[package]]
 name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
+source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
@@ -659,7 +668,7 @@ version = "0.2.89"
 source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "0ed0d4f68a3015cc185aff4db9506a015f4b96f95303897bfa23f846db54064e"
 dependencies = [
- "cfg-if 1.0.0 (registry+https://rsproxy.cn/crates.io-index)",
+ "cfg-if",
  "wasm-bindgen-macro",
 ]
 
@@ -671,7 +680,7 @@ checksum = "1b56f625e64f3a1084ded111c4d5f477df9f8c92df113852fa5a374dbda78826"
 dependencies = [
  "bumpalo",
  "log",
- "once_cell 1.19.0 (registry+https://rsproxy.cn/crates.io-index)",
+ "once_cell",
  "proc-macro2 1.0.75",
  "quote 1.0.35",
  "syn 2.0.48",
@@ -745,6 +754,15 @@ source = "registry+https://rsproxy.cn/crates.io-index"
 checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
 dependencies = [
  "windows-targets 0.52.0 (registry+https://rsproxy.cn/crates.io-index)",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.48.0"
+source = "registry+https://rsproxy.cn/crates.io-index"
+checksum = "677d2418bec65e3338edb076e806bc1ec15693c5d0104683f2efe857f61056a9"
+dependencies = [
+ "windows-targets 0.48.5",
 ]
 
 [[package]]

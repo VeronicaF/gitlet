@@ -1,5 +1,6 @@
 use anyhow::{ensure, Context};
 use clap::{Parser, Subcommand};
+use gitlet::objects::tree::TreeEntry;
 use gitlet::objects::{Fmt, GitObject, GitObjectTrait};
 use gitlet::repository::Repository;
 use indexmap::{IndexMap, IndexSet};
@@ -110,6 +111,17 @@ enum Commands {
         /// Files to remove
         path: Vec<String>,
     },
+    /// Add files contents to the index.
+    Add {
+        /// Files to add
+        path: Vec<String>,
+    },
+    /// Record changes to the repository.
+    Commit {
+        /// Message to associate with this commit.
+        #[arg(short, long)]
+        message: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -126,7 +138,7 @@ fn main() -> anyhow::Result<()> {
                 .find_object(&object, true)?
                 .ok_or(anyhow::anyhow!("object not found: {}", object))?;
 
-            let object = GitObject::read_object(&repo, &object)?;
+            let object = repo.read_object(&object)?;
 
             ensure!(object.header.fmt == fmt, "objects type mismatch");
 
@@ -138,12 +150,12 @@ fn main() -> anyhow::Result<()> {
 
             let data = std::fs::read(&path)?;
 
-            let object = GitObject::new(fmt, data);
+            let object = GitObject::new(fmt, data.into());
 
             let sha = if write {
-                object.write_object(&repo)?
+                repo.write_object(&object)?
             } else {
-                gitlet::utils::sha(&object.serialize())
+                gitlet::utils::sha(&object.serialize()?)
             };
 
             println!("{}", sha);
@@ -166,7 +178,7 @@ fn main() -> anyhow::Result<()> {
 
                 visited.insert(sha.to_string());
 
-                let commit = GitObject::read_object(repo, sha)?;
+                let commit = repo.read_object(sha)?;
 
                 anyhow::ensure!(commit.header.fmt == Fmt::Commit, "objects type mismatch");
 
@@ -213,7 +225,7 @@ fn main() -> anyhow::Result<()> {
                     .find_object(name, true)?
                     .ok_or(anyhow::anyhow!("object not found: {}", name))?;
 
-                let object = GitObject::read_object(repo, &name)?;
+                let object = repo.read_object(&name)?;
 
                 // if name refers to a commit, we need to get the tree
                 if object.header.fmt == Fmt::Commit {
@@ -229,18 +241,18 @@ fn main() -> anyhow::Result<()> {
 
                 let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
-                for (mode, path, sha1) in tree.0 {
-                    let file_type = mode.file_type()?;
-                    let mode = mode.0;
-                    let sha1_str = sha1.0;
+                for tree_entry in tree.0 {
+                    let file_type = tree_entry.file_type()?;
+                    let TreeEntry { mode, path, sha1 } = tree_entry;
+
                     if recursive && file_type == gitlet::objects::tree::FileType::Tree {
-                        ls_tree(repo, recursive, &sha1_str, prefix.join(path))?;
+                        ls_tree(repo, recursive, &sha1, prefix.join(path))?;
                     } else {
                         println!(
                             "{} {} {}\t{}",
                             mode,
                             file_type.to_str(),
-                            sha1_str,
+                            sha1,
                             prefix.join(&path).display()
                         );
                     }
@@ -258,7 +270,7 @@ fn main() -> anyhow::Result<()> {
                 .find_object(&name, true)?
                 .ok_or(anyhow::anyhow!("object not found: {}", name))?;
 
-            let commit = GitObject::read_object(&repo, &name)?;
+            let commit = repo.read_object(&name)?;
 
             ensure!(
                 commit.header.fmt == Fmt::Commit,
@@ -280,23 +292,24 @@ fn main() -> anyhow::Result<()> {
             }
 
             fn checkout(repo: &Repository, tree: &str, prefix: PathBuf) -> anyhow::Result<()> {
-                let tree_object = GitObject::read_object(repo, tree)?;
+                let tree_object = repo.read_object(tree)?;
                 ensure!(
                     tree_object.header.fmt == Fmt::Tree,
                     "objects type mismatch, expected tree"
                 );
                 let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
-                for (mode, path, sha1) in tree.0 {
-                    let object = GitObject::read_object(repo, &sha1.0)?;
-                    let dest = prefix.join(&path);
+                for tree_entry in tree.0 {
+                    let file_type = tree_entry.file_type()?;
+                    let TreeEntry { path, sha1, .. } = tree_entry;
 
-                    let file_type = mode.file_type()?;
+                    let object = repo.read_object(&sha1)?;
+                    let dest = prefix.join(&path);
 
                     match file_type {
                         gitlet::objects::tree::FileType::Tree => {
                             std::fs::create_dir_all(&dest)?;
-                            checkout(repo, &sha1.0, dest)?;
+                            checkout(repo, &sha1, dest)?;
                         }
                         gitlet::objects::tree::FileType::Blob => {
                             std::fs::write(&dest, object.data)?;
@@ -349,9 +362,9 @@ fn main() -> anyhow::Result<()> {
 
                     let bytes = tag_object.serialize()?;
 
-                    let git_object = GitObject::new(Fmt::Tag, bytes.into());
+                    let git_object = GitObject::new(Fmt::Tag, bytes);
 
-                    sha = git_object.write_object(&repo)?;
+                    sha = repo.write_object(&git_object)?;
                 }
 
                 let tag_ref = gitlet::refs::tag::Tag::new(name, sha);
@@ -459,7 +472,7 @@ fn main() -> anyhow::Result<()> {
                     .find_object(tree, true)?
                     .ok_or(anyhow::anyhow!("object not found: {}", tree))?;
 
-                let object = GitObject::read_object(repo, &tree_or_commit)?;
+                let object = repo.read_object(&tree_or_commit)?;
 
                 if let Fmt::Commit = object.header.fmt {
                     let commit = gitlet::objects::commit::Commit::from_bytes(object.data.clone())?;
@@ -476,16 +489,18 @@ fn main() -> anyhow::Result<()> {
 
                 let tree = gitlet::objects::tree::Tree::from_bytes(tree_object.data)?;
 
-                for (mode, path, sha1) in tree.0 {
-                    let dest = path;
-                    let file_type = mode.file_type()?;
+                for tree_entry in tree.0 {
+                    let file_type = tree_entry.file_type()?;
+
+                    let dest = tree_entry.path;
+                    let sha1 = tree_entry.sha1;
 
                     match file_type {
                         gitlet::objects::tree::FileType::Tree => {
-                            tree_to_dict(repo, &sha1.0, &prefix.join(dest), dict)?;
+                            tree_to_dict(repo, &sha1, &prefix.join(dest), dict)?;
                         }
                         gitlet::objects::tree::FileType::Blob => {
-                            dict.insert(prefix.join(dest).display().to_string(), sha1.0);
+                            dict.insert(prefix.join(dest).display().to_string(), sha1);
                         }
                         gitlet::objects::tree::FileType::SymLink => {
                             unimplemented!()
@@ -558,9 +573,9 @@ fn main() -> anyhow::Result<()> {
                     // todo git modify ctime and mtime after status command
                     if meta.ctime_nsec() != ctime_ns || meta.mtime_nsec() != mtime_ns {
                         let data = std::fs::read(&abs_path)?;
-                        let object = GitObject::new(Fmt::Blob, data);
+                        let object = GitObject::new(Fmt::Blob, data.into());
 
-                        let hash = gitlet::utils::sha(&object.serialize());
+                        let hash = gitlet::utils::sha(&object.serialize()?);
                         if hash != entry.sha {
                             println!("  modified: {}", entry.name);
                         }
@@ -584,7 +599,19 @@ fn main() -> anyhow::Result<()> {
         Commands::Rm { path } => {
             let repo = Repository::find(".")?;
 
-            repo.rm(path, true, false)?;
+            repo.rm(&path, true, false)?;
+        }
+        Commands::Add { path } => {
+            let repo = Repository::find(".")?;
+
+            repo.add(&path)?;
+        }
+        Commands::Commit { message } => {
+            let repo = Repository::find(".")?;
+
+            let sha1 = repo.commit(message)?;
+
+            println!("commit {}", sha1)
         }
     }
     Ok(())

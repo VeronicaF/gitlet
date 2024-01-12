@@ -1,12 +1,16 @@
 use crate::ignore::GitIgnore;
-use crate::index::GitIndex;
-use crate::objects::{GitObject, GitObjectTrait};
+use crate::index::Index;
+use crate::objects::tree::{Tree, TreeEntry};
+use crate::objects::{Fmt, GitObject, GitObjectTrait};
+use crate::utils::sha;
 use anyhow::Context;
 use bytes::Bytes;
 use indexmap::{IndexMap, IndexSet};
+use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::ops::Deref;
+use std::os::macos::fs::MetadataExt;
 use std::path::PathBuf;
 
 /// a gitlet repository
@@ -16,23 +20,20 @@ pub struct Repository {
     pub config: RepoConfig,
 }
 
-pub struct RepoConfig(ini::Ini);
+#[derive(Debug)]
+pub struct RepoConfig(configparser::ini::Ini);
 
 impl RepoConfig {
-    pub fn write_to_file(&self, path: impl Into<PathBuf>) -> anyhow::Result<()> {
-        self.0
-            .write_to_file(path.into())
-            .context("failed to write config file")
-    }
+    pub fn user(&self) -> Option<String> {
+        let name = self.get("user", "name")?;
+        let email = self.get("user", "email")?;
 
-    pub fn load_from_file(path: impl Into<PathBuf>) -> anyhow::Result<Self> {
-        let config = ini::Ini::load_from_file(path.into()).context("failed to read config file")?;
-        Ok(Self(config))
+        Some(format!("{} <{}>", name, email))
     }
 }
 
 impl Deref for RepoConfig {
-    type Target = ini::Ini;
+    type Target = configparser::ini::Ini;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -41,12 +42,11 @@ impl Deref for RepoConfig {
 
 impl Default for RepoConfig {
     fn default() -> Self {
-        let mut config = ini::Ini::new();
-        config
-            .with_section(Some("core".to_owned()))
-            .set("repositoryformatversion", "0")
-            .set("filemode", "false")
-            .set("bare", "false");
+        let mut config = configparser::ini::Ini::new();
+
+        config.setstr("core", "repositoryformatversion", Some("0"));
+        config.setstr("core", "filemode", Some("false"));
+        config.setstr("core", "bare", Some("false"));
 
         Self(config)
     }
@@ -65,13 +65,16 @@ impl Repository {
         );
 
         // Read configuration file in .git/config
-        let config = RepoConfig::load_from_file(git_dir.join("config"))
-            .context("failed to read config file")?;
+        let mut config = configparser::ini::Ini::new();
+
+        config
+            .load(git_dir.join("config"))
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         Ok(Self {
             work_tree: working_dir,
             git_dir,
-            config,
+            config: RepoConfig(config),
         })
     }
 
@@ -122,7 +125,7 @@ impl Repository {
         fs::File::create(git_dir.join("config")).context("failed to create config file")?;
 
         let config = RepoConfig::default();
-        config.write_to_file(git_dir.join("config"))?;
+        config.write(git_dir.join("config"))?;
 
         Ok(Self {
             work_tree,
@@ -193,9 +196,9 @@ impl Repository {
             anyhow::ensure!(depth < 10, "too many levels of symbolic references");
 
             // todo We read the whole object to get the header, which is not efficient.
-            let object = GitObject::read_object(self, &name)?;
+            let object = self.read_object(&name)?;
 
-            if follow && object.header.fmt == crate::objects::Fmt::Tag {
+            if follow && object.header.fmt == Fmt::Tag {
                 let tag_object = crate::objects::tag::Tag::from_bytes(object.data)?;
                 name = tag_object
                     .object()
@@ -308,22 +311,74 @@ impl Repository {
         })
     }
 
-    pub fn read_index(&self) -> anyhow::Result<GitIndex> {
+    pub fn read_object(&self, sha: &str) -> anyhow::Result<GitObject> {
+        let path = self.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
+
+        anyhow::ensure!(path.exists(), "objects not found: {}", sha);
+
+        let file = fs::File::open(&path)?;
+
+        let mut data = Vec::new();
+        flate2::bufread::ZlibDecoder::new_with_decompress(
+            std::io::BufReader::new(file),
+            flate2::Decompress::new(true),
+        )
+        .read_to_end(&mut data)
+        .context("failed to read zlib data")?;
+
+        let data = Bytes::from(data);
+
+        GitObject::from_bytes(data)
+    }
+
+    /// write objects to disk
+    ///
+    /// returns sha of objects
+    pub fn write_object(&self, object: &GitObject) -> anyhow::Result<String> {
+        let data = object.serialize()?;
+
+        let sha = sha(&data);
+
+        let path = self.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
+
+        if path.exists() {
+            return Ok(sha);
+        }
+
+        fs::create_dir_all(
+            path.parent()
+                .context(format!("failed to get path parent: {}", path.display()))?,
+        )?;
+
+        let file = fs::File::create(&path)?;
+
+        let mut encoder = flate2::write::ZlibEncoder::new(file, flate2::Compression::default());
+
+        encoder
+            .write_all(&data)
+            .context("failed to write zlib data")?;
+
+        encoder.finish().context("failed to write zlib data")?;
+
+        Ok(sha)
+    }
+
+    pub fn read_index(&self) -> anyhow::Result<Index> {
         let index_path = self.git_dir.join("index");
 
         // New repositories have no index!
         if !index_path.exists() {
-            return Ok(GitIndex::default());
+            return Ok(Index::default());
         }
 
         let data = fs::read(&index_path).context("failed to read index file")?;
 
         let data = Bytes::from(data);
 
-        GitIndex::from_bytes(data)
+        Index::from_bytes(data)
     }
 
-    pub fn write_index(&self, index: &GitIndex) -> anyhow::Result<()> {
+    pub fn write_index(&self, index: &Index) -> anyhow::Result<()> {
         let index_path = self.git_dir.join("index");
 
         let data = index.serialize()?;
@@ -376,7 +431,7 @@ impl Repository {
                 .context("invalid path")?
                 .to_owned();
 
-            let object = GitObject::read_object(self, &entry.sha)?;
+            let object = self.read_object(&entry.sha)?;
 
             let lines = String::from_utf8_lossy(&object.data).to_string();
 
@@ -399,12 +454,108 @@ impl Repository {
         }
     }
 
+    /// Create a tree from index object.
+    ///
+    /// Returns the sha of the root tree object.
+    ///
+    /// Notice: this function will write tree objects to the disk.
+    fn create_tree_from_index(&self, index: &Index) -> anyhow::Result<String> {
+        enum T<'a> {
+            IndexEntry(&'a crate::index::IndexEntry), // file in a dictionary
+            TreeInfo((String, String)),               // file name, sha; dictionary in a dictionary
+        }
+
+        let mut map = HashMap::new();
+
+        // collect entries by parent path
+        for entry in &index.entries {
+            let path = &entry.name;
+            let path_buf = PathBuf::from(path);
+            let mut parent = path_buf
+                .parent()
+                .context(format!("invalid path: {}", path))?
+                .to_owned();
+            let parent_str = parent.to_str().context("invalid path")?.to_string();
+
+            while parent != PathBuf::from("") {
+                let parent_str = parent.to_str().context("invalid path")?;
+
+                map.entry(parent_str.to_string()).or_insert(vec![]);
+                parent.pop();
+            }
+            map.entry(parent_str.to_string())
+                .or_insert(vec![])
+                .push(T::IndexEntry(entry));
+        }
+
+        let mut sha1 = String::new();
+
+        // sort paths by length so we can create tree objects from bottom to top
+        let mut paths: Vec<_> = map.keys().cloned().collect();
+
+        paths.sort_by_key(|a| !a.len());
+
+        for path in paths {
+            let mut tree = Tree::default();
+
+            // Safe: unwrap is safe because we have ensured that key is in map
+            let entries = map.get(&path).unwrap();
+
+            for entry in entries {
+                let tree_entry = match entry {
+                    T::IndexEntry(index_entry) => {
+                        let path = PathBuf::from(&index_entry.name);
+
+                        let file_name = path.file_name().context("invalid path")?;
+
+                        let file_name = PathBuf::from(file_name);
+
+                        TreeEntry::try_new(
+                            format!(
+                                "{:0>2o}{:0>4o}",
+                                index_entry.mode_type, index_entry.mode_perms
+                            ),
+                            file_name,
+                            index_entry.sha.clone(),
+                        )?
+                    }
+                    T::TreeInfo((file_name, sha1)) => TreeEntry::try_new(
+                        "40000".to_string(),
+                        PathBuf::from(file_name),
+                        sha1.clone(),
+                    )?,
+                };
+                tree.0.push(tree_entry);
+            }
+
+            let tree_object = GitObject::new(Fmt::Tree, tree.serialize()?);
+
+            sha1 = self.write_object(&tree_object)?;
+
+            if path.is_empty() {
+                break;
+            }
+
+            let path_buf = PathBuf::from(path);
+            let parent = path_buf.parent().unwrap().to_str().unwrap().to_string();
+            let file_name = path_buf.file_name().unwrap().to_str().unwrap().to_string();
+            map.entry(parent)
+                .or_insert(vec![])
+                .push(T::TreeInfo((file_name, sha1.clone())));
+        }
+
+        Ok(sha1)
+    }
+}
+
+impl Repository {
+    /// rm files from index
     pub fn rm(
         &self,
-        paths: Vec<String>,
+        paths: &Vec<String>,
         delete_file: bool,
         ignore_missing: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Index> {
         let mut index = self.read_index()?;
         let mut abs_paths = IndexSet::with_capacity(paths.len());
 
@@ -445,6 +596,121 @@ impl Repository {
 
         self.write_index(&index)?;
 
+        Ok(index)
+    }
+
+    pub fn add(&self, paths: &Vec<String>) -> anyhow::Result<()> {
+        // rm ensures that paths are in working directory
+        let mut index = self.rm(paths, false, true)?;
+
+        for path in paths {
+            let abs_path = PathBuf::from(path).canonicalize().context("invalid path")?;
+
+            let object = GitObject::from_file(&abs_path, Fmt::Blob)?;
+
+            let sha = self.write_object(&object)?;
+
+            let metadata = abs_path.metadata().context("failed to read metadata")?;
+
+            let ctime_s = metadata.st_ctime() as u32;
+            let ctime_ns = (metadata.st_ctime_nsec() % 1_000_000_000) as u32;
+
+            let mtime_s = metadata.st_mtime() as u32;
+            let mtime_ns = (metadata.st_mtime_nsec() % 1_000_000_000) as u32;
+
+            let index_entry = crate::index::IndexEntry {
+                name: abs_path
+                    .strip_prefix(&self.work_tree)
+                    .unwrap() // unwrap is safe because we have ensured that abs_path is a child of work_tree
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+                ctime: (ctime_s, ctime_ns),
+                mtime: (mtime_s, mtime_ns),
+                dev: metadata.st_dev() as u32,
+                ino: metadata.st_ino() as u32,
+                mode_type: 0b1000,
+                mode_perms: 0o644,
+                uid: metadata.st_uid(),
+                gid: metadata.st_gid(),
+                fsize: metadata.st_size() as u32,
+                sha,
+                flag_assume_valid: false,
+                flag_stage: 0,
+            };
+
+            index.entries.push(index_entry);
+        }
+
+        self.write_index(&index)?;
+
         Ok(())
+    }
+
+    pub fn read_config(&self) -> anyhow::Result<RepoConfig> {
+        let mut config = configparser::ini::Ini::new();
+
+        let user_home = dirs::home_dir().context("failed to get home directory")?;
+
+        let config_dir = if let Ok(xdg_config_home) = std::env::var("XDG_CONFIG_HOME") {
+            PathBuf::from(xdg_config_home)
+        } else {
+            user_home.join(".config")
+        };
+
+        let config_files = [
+            config_dir.join("git/config"),
+            user_home.join(".gitconfig"),
+            self.git_dir.join("config"),
+        ];
+
+        for config_file in config_files {
+            if config_file.exists() {
+                let config_file = config_file.canonicalize().context("invalid path")?;
+
+                config
+                    .load_and_append(config_file)
+                    .map_err(|e| anyhow::anyhow!(e))?;
+            }
+        }
+
+        Ok(RepoConfig(config))
+    }
+
+    pub fn commit(&self, message: String) -> anyhow::Result<String> {
+        let index = self.read_index()?;
+
+        // create tree object and write it to disk from index file
+        let tree_sha = self.create_tree_from_index(&index)?;
+
+        let parent = self.resolve_ref("HEAD")?;
+
+        let config = self.read_config()?;
+
+        // create commit object and write it to disk
+        let commit = crate::objects::commit::Commit::new(
+            tree_sha,
+            parent,
+            config.user().context("failed to get user")?,
+            chrono::Local::now(),
+            message,
+        );
+
+        let commit_sha = self.write_object(&GitObject::new(Fmt::Commit, commit.serialize()?))?;
+
+        // Update HEAD so our commit is now the tip of the active branch.
+
+        if let Ok(active_branch) = self.active_branch() {
+            // If we're on a branch, we update refs/heads/BRANCH
+            let branch_path = self.git_dir.join("refs").join("heads").join(active_branch);
+            fs::write(branch_path, format!("{}\n", commit_sha))
+                .context("failed to write branch file")?;
+        } else {
+            // Otherwise, we update HEAD directly
+            fs::write(self.git_dir.join("HEAD"), format!("{}\n", commit_sha))
+                .context("failed to write HEAD file")?;
+        }
+
+        Ok(commit_sha)
     }
 }

@@ -8,20 +8,37 @@ use std::path::PathBuf;
 /// it associates blobs to paths.
 ///
 /// It’s an array of three-element tuples made of a file mode, a path (relative to the worktree) and a SHA-1.
+#[derive(Default, Debug)]
 pub struct Tree(pub Vec<TreeEntry>);
 
-type TreeEntry = (FileMode, PathBuf, Sha1);
-
-pub struct FileMode(pub String);
-
-impl FileMode {
-    pub fn file_type(&self) -> anyhow::Result<FileType> {
-        FileType::from_octal(&self.0[0..2])
+impl Tree {
+    pub fn insert(&mut self, entry: TreeEntry) {
+        self.0.push(entry);
     }
 }
 
-pub struct Sha1(pub String);
+#[derive(Debug)]
+pub struct TreeEntry {
+    pub mode: String,
+    pub path: PathBuf,
+    pub sha1: String,
+}
 
+impl TreeEntry {
+    pub fn try_new(mode: String, path: PathBuf, sha1: String) -> anyhow::Result<Self> {
+        anyhow::ensure!(mode.len() <= 6, "invalid mode");
+
+        let mode = format!("{:0>6}", mode);
+
+        anyhow::ensure!(FileType::from_octal(&mode[0..2]).is_ok(), "invalid mode");
+
+        Ok(Self { mode, path, sha1 })
+    }
+
+    pub fn file_type(&self) -> anyhow::Result<FileType> {
+        FileType::from_octal(&self.mode[0..2])
+    }
+}
 #[derive(PartialEq)]
 pub enum FileType {
     Tree,
@@ -123,7 +140,7 @@ impl GitObjectTrait for Tree {
                             PathBuf::from(String::from_utf8_lossy(&path.split()).to_string());
                         let sha1 = hex::encode(sha1.split());
 
-                        arr.push((FileMode(mode), path, Sha1(sha1)));
+                        arr.push(TreeEntry::try_new(mode, path, sha1)?);
                     }
                 }
             }
@@ -140,30 +157,32 @@ impl GitObjectTrait for Tree {
         let mut data: Vec<&TreeEntry> = self.0.iter().collect();
 
         data.sort_by(|a, b| {
-            // let a = &a.1;
-            // let b = &b.1;
-            let mut path_a = a.1.clone();
-            let mut path_b = b.1.clone();
+            let path_a = a.path.clone();
+            let path_b = b.path.clone();
 
-            // unwrap is safe because we have checked the file type in from_bytes
-            if let FileType::Tree = a.0.file_type().expect("invalid file type") {
-                path_a.push("/");
+            // unwrap is safe because we have checked the file type when creating the tree entry
+            let mut path_a_str = path_a.to_str().unwrap().to_string();
+
+            if let FileType::Tree = a.file_type().expect("invalid file type") {
+                path_a_str.push('/');
             }
 
-            if let FileType::Tree = b.0.file_type().expect("invalid file type") {
-                path_b.push("/");
+            let mut path_b_str = path_b.to_str().unwrap().to_string();
+
+            if let FileType::Tree = b.file_type().expect("invalid file type") {
+                path_b_str.push('/');
             }
 
-            path_a.cmp(&path_b)
+            path_a_str.cmp(&path_b_str)
         });
 
-        for (mode, path, sha1) in &self.0 {
-            bytes.put_slice(mode.0.as_bytes());
+        for TreeEntry { mode, path, sha1 } in data {
+            bytes.put_slice(mode.trim_start_matches('0').as_bytes());
             bytes.put_u8(b' ');
             bytes.put_slice(path.to_str().context("invalid path")?.as_bytes());
             bytes.put_u8(b'\0');
 
-            bytes.put_slice(hex::decode(&sha1.0).context("invalid sha1")?.as_slice());
+            bytes.put_slice(hex::decode(sha1).context("invalid sha1")?.as_slice());
         }
 
         Ok(bytes.freeze())
@@ -186,9 +205,9 @@ mod test {
         let tree = Tree::from_bytes(raw.clone()).unwrap();
 
         assert_eq!(tree.0.len(), 1);
-        assert_eq!(tree.0[0].0 .0, "100644");
-        assert_eq!(tree.0[0].1.to_str().unwrap(), ".gitignore");
-        assert_eq!(&tree.0[0].2 .0, "be0c80f03e9bfa51999c6c8746b9e358124d53ef");
+        assert_eq!(tree.0[0].mode, "100644");
+        assert_eq!(tree.0[0].path.to_str().unwrap(), ".gitignore");
+        assert_eq!(&tree.0[0].sha1, "be0c80f03e9bfa51999c6c8746b9e358124d53ef");
 
         assert_eq!(tree.serialize().unwrap(), raw);
     }

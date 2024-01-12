@@ -4,12 +4,11 @@ pub mod kvlm;
 pub mod tag;
 pub mod tree;
 
-use crate::repository::Repository;
-use crate::utils::sha;
 use anyhow::Context;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use clap::ValueEnum;
-use std::io::{Read, Write};
+use std::io::Read;
+use std::path::PathBuf;
 
 /// Read and write git objects, do the serialization and deserialization with compression
 #[derive(Debug)]
@@ -44,35 +43,16 @@ impl Fmt {
 }
 
 impl GitObject {
-    pub fn new(fmt: Fmt, data: Vec<u8>) -> GitObject {
+    pub fn new(fmt: Fmt, data: Bytes) -> GitObject {
         let length = data.len();
 
         let header = Header { fmt, length };
 
-        GitObject {
-            header,
-            data: data.into(),
-        }
+        GitObject { header, data }
     }
 
-    pub fn read_object(repo: &Repository, sha: &str) -> anyhow::Result<GitObject> {
-        let path = repo.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
-
-        anyhow::ensure!(path.exists(), "objects not found: {}", sha);
-
-        let file = std::fs::File::open(&path)?;
-
-        let mut data = Vec::new();
-        flate2::bufread::ZlibDecoder::new_with_decompress(
-            std::io::BufReader::new(file),
-            flate2::Decompress::new(true),
-        )
-        .read_to_end(&mut data)
-        .context("failed to read zlib data")?;
-
-        let mut data = Bytes::from(data);
-
-        let (fmt, rest) = data
+    pub fn from_bytes(mut bytes: Bytes) -> anyhow::Result<Self> {
+        let (fmt, rest) = bytes
             .split_once(|&x| x == b' ')
             .context("failed to split objects fmt")?;
         let (length, rest) = rest
@@ -83,10 +63,7 @@ impl GitObject {
 
         let fmt = Fmt::from_str(fmt, true)
             .map_err(|e| anyhow::anyhow!(e))
-            .context(format!(
-                "failed to parse objects fmt {} for sha {}",
-                fmt, sha
-            ))?;
+            .context(format!("failed to parse objects fmt {}", fmt))?;
 
         let length = std::str::from_utf8(length).context("failed to parse objects length")?;
 
@@ -96,44 +73,25 @@ impl GitObject {
 
         anyhow::ensure!(rest.len() == length, "objects length mismatch");
 
-        data.advance(data.len() - rest.len());
+        bytes.advance(bytes.len() - rest.len());
 
         let header = Header { fmt, length };
 
-        Ok(GitObject { header, data })
+        Ok(GitObject {
+            header,
+            data: bytes,
+        })
     }
 
-    /// write objects to disk
-    ///
-    /// returns sha of objects
-    pub fn write_object(&self, repo: &Repository) -> anyhow::Result<String> {
-        let data = self.serialize();
+    pub fn from_file(path: impl Into<PathBuf>, fmt: Fmt) -> anyhow::Result<Self> {
+        let mut file = std::fs::File::open(path.into())?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
 
-        let sha = sha(&data);
-
-        let path = repo.git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
-
-        anyhow::ensure!(!path.exists(), "objects already exists: {}", sha);
-
-        std::fs::create_dir_all(
-            path.parent()
-                .context(format!("failed to get path parent: {}", path.display()))?,
-        )?;
-
-        let file = std::fs::File::create(&path)?;
-
-        let mut encoder = flate2::write::ZlibEncoder::new(file, flate2::Compression::default());
-
-        encoder
-            .write_all(&data)
-            .context("failed to write zlib data")?;
-
-        encoder.finish().context("failed to write zlib data")?;
-
-        Ok(sha)
+        Ok(Self::new(fmt, data.into()))
     }
 
-    pub fn serialize(&self) -> Bytes {
+    pub fn serialize(&self) -> anyhow::Result<Bytes> {
         // todo still clones data here :(
         // maybe change the GitObject
         let mut data = BytesMut::new();
@@ -144,7 +102,7 @@ impl GitObject {
         data.put_u8(b'\0');
         data.extend_from_slice(&self.data);
 
-        data.into()
+        Ok(data.into())
     }
 }
 

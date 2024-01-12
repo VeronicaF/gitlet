@@ -9,7 +9,7 @@
 ///
 /// # Detached Head
 /// Detached head is when HEAD points directly to a commit, instead of a branch.
-pub struct Branch {
+pub struct _Branch {
     pub name: String,
     pub sha: String,
 }

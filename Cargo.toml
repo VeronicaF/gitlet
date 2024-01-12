@@ -11,12 +11,13 @@ anyhow = { version = "1.0.77", registry = "rsproxy" }
 bytes = { version = "1.5.0", registry = "rsproxy" }
 chrono = { version = "0.4.31", registry = "rsproxy" }
 clap = { version = "4.4.11", features = ["derive"] }
+configparser = { version = "3.0.4", registry = "rsproxy" }
+dirs = { version = "5.0.1", registry = "rsproxy" }
 flate2 = { version = "1.0.28", registry = "rsproxy" }
 glob = { version = "0.3.1", registry = "rsproxy" }
 hex = { version = "0.4.3", registry = "rsproxy" }
 indexmap = { version = "2.1.0", registry = "rsproxy" }
 regex = { version = "1.10.2", registry = "rsproxy" }
-rust-ini = "0.19"
 sha1 = { version = "0.10.6", registry = "rsproxy" }
 users = { version = "0.11.0", registry = "rsproxy" }
 walkdir = { version = "2.4.0", registry = "rsproxy" }

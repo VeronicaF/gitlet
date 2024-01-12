@@ -18,14 +18,12 @@ use std::cmp::min;
 /// 2. A series of entries, sorted, each representing a file; padded to multiple of 8 bytes.
 /// 3. A series of optional extensions, which we’ll ignore.
 #[derive(Debug)]
-pub struct GitIndex {
+pub struct Index {
     pub version: u32,
-    pub entries: Vec<GitIndexEntry>,
+    pub entries: Vec<IndexEntry>,
 }
 
-impl GitIndex {
-    pub fn rm(&mut self, path: &[&str]) {}
-
+impl Index {
     pub fn from_bytes(mut bytes: Bytes) -> anyhow::Result<Self> {
         let mut header = bytes.split_to(12);
 
@@ -141,7 +139,7 @@ impl GitIndex {
             } else {
                 let mut name = BytesMut::with_capacity(0xfff + 1);
                 loop {
-                    let byte = bytes.get(0);
+                    let byte = bytes.first();
                     anyhow::ensure!(byte.is_some(), "name is somehow not null-terminated");
                     let byte = *byte.unwrap();
                     bytes.advance(1);
@@ -161,7 +159,7 @@ impl GitIndex {
 
             let name = String::from_utf8_lossy(&name).to_string();
 
-            let entry = GitIndexEntry {
+            let entry = IndexEntry {
                 ctime: (ctime_sec, ctime_nsec),
                 mtime: (mtime_sec, mtime_nsec),
                 dev,
@@ -180,7 +178,7 @@ impl GitIndex {
             entries.push(entry);
         }
 
-        Ok(GitIndex { version, entries })
+        Ok(Index { version, entries })
     }
 
     pub fn serialize(&self) -> anyhow::Result<Bytes> {
@@ -231,9 +229,9 @@ impl GitIndex {
     }
 }
 
-impl Default for GitIndex {
+impl Default for Index {
     fn default() -> Self {
-        GitIndex {
+        Index {
             version: 2,
             entries: vec![],
         }
@@ -242,7 +240,7 @@ impl Default for GitIndex {
 
 /// # The git index file entry
 #[derive(Debug)]
-pub struct GitIndexEntry {
+pub struct IndexEntry {
     /// The last time a file's metadata changed.  This is a pair
     /// (timestamp in seconds, nanoseconds)
     pub ctime: (u32, u32),
@@ -273,7 +271,27 @@ pub struct GitIndexEntry {
     pub name: String,
 }
 
-impl GitIndexEntry {
+impl Default for IndexEntry {
+    fn default() -> Self {
+        IndexEntry {
+            ctime: (0, 0),
+            mtime: (0, 0),
+            dev: 0,
+            ino: 0,
+            mode_type: 0,
+            mode_perms: 0,
+            uid: 0,
+            gid: 0,
+            fsize: 0,
+            sha: "".to_string(),
+            flag_assume_valid: false,
+            flag_stage: 0,
+            name: "".to_string(),
+        }
+    }
+}
+
+impl IndexEntry {
     pub fn mode_type_str(&self) -> &str {
         match self.mode_type {
             0b1000 => "regular file",
